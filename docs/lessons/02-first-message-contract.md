@@ -10,7 +10,9 @@
       Taught in [The contract is a versioned page](#the-contract-is-a-versioned-page).
       Used by: this assignment, then every message from M2 on.
 - [ ] **The first real message type in `Contracts`** — a C# type whose JSON form is the
-      message. Taught in [The first real message type](#the-first-real-message-type).
+      message. It is `ShuttleStatus`, a status report the end product really exchanges —
+      the same family the spec's M2 round trip needs. Taught in
+      [The first real message type](#the-first-real-message-type).
       Used by: `Contracts`, then both apps at M2 and the shuttle simulator at M1.
 - [ ] **A real unit test** — a test with an assertion that can actually fail.
       Taught in [A test that can fail](#a-test-that-can-fail).
@@ -35,7 +37,7 @@ PascalCase type names, and test names shaped like `Method_condition_expectation`
 ## Where this fits
 
 Milestone M0 is "repo and tooling." Lesson 01 built the empty frame. This lesson puts the
-first real thing on it.
+first real thing on it: `ShuttleStatus`, the first message of the end-product contract.
 
 Here is the problem it solves. The fleet manager and the shuttle are two programs. They
 will never share memory. They only exchange messages, written in JSON — the plain-text data
@@ -86,15 +88,17 @@ Answer these out loud before you read on. Treat anything you hesitate on as new 
 
 ## Verification table
 
-Everything below I checked by running a command this session, or by reading a file.
-Scratch work lived in `/tmp/opencode/lesson02-scratch/` and was deleted afterwards.
+Everything below I checked by running a command or by reading a file. Rows marked
+**2026-10-07** were measured when this lesson was first written, in
+`/tmp/opencode/lesson02-scratch/` (deleted afterwards). Every other row was re-measured on
+**2026-10-08** for this revision, in `/tmp/opencode/lesson02-rev/` (deleted afterwards).
 I never wrote to `src/`, never built it, and never started a process there.
 
 | Claim | How I checked | Result |
 |---|---|---|
 | Installed SDK | `dotnet --version` in this repo | `10.0.112`, exit 0 |
-| `docs/contract/` has no page yet | `find docs/contract -maxdepth 1 -name 'v*.md'` | no output, exit 0 |
-| The contract-page checks on a missing page | the contract-page block in the assignment, run today | `test -f` exit **1**; both greps exit **2** with `No such file or directory` |
+| `docs/contract/` holds one empty page | `find docs/contract -maxdepth 1 -name 'v*.md'`; `wc -c docs/contract/v1.md` | prints `docs/contract/v1.md`; size `0` bytes |
+| The contract-page checks on today's empty page | run on this repo | `test -f` exit **0** (the file exists); version grep exit **1**; fence grep exit **1** (an empty file has nothing to match) |
 | The placeholders exist today | `find src -name 'Class1.cs' -o -name 'UnitTest1.cs'` | prints 3 paths: `src/Contracts/Class1.cs`, both `UnitTest1.cs` |
 | `Test1` exists today | `grep -rn 'Test1' src --include='*.cs'` | 4 lines, exit 0 |
 | The template string exists today | `grep -rn 'Hello, World!' src --include='*.cs'` | 1 line, exit 0 |
@@ -105,17 +109,25 @@ I never wrote to `src/`, never built it, and never started a process there.
 | The same loop is empty when tests are real | run on the toy and on a template-only test project | nothing on the toy; `UnitTest1.cs` on the template project |
 | A JSON roundtrip test passes in the toy | `dotnet test` in the walkthrough below | `Passed! ... Passed: 2`, exit 0 |
 | `--list-tests` prints test names, not just counts | `dotnet test ... --list-tests` in the toy | two lines, `Stop.Core.Tests.ArrivalTests.Arrival_...` |
-| A template project lists the placeholder name | `--list-tests` on a fresh `dotnet new xunit` project | `Ph.Tests.UnitTest1.Test1` |
+| A template project lists the placeholder name | `--list-tests` on a fresh `dotnet new xunit` project | `FleetManager.Tests.UnitTest1.Test1` |
 | Renaming a field: roundtrip still passes, wire-shape test fails | `sed` rename in the toy, then `dotnet test` | `Failed: 1, Passed: 1`, exit 1 (restored afterwards: exit 0) |
 | Two test projects: one `Passed!` line each | bare `dotnet test` on a two-project scratch solution | two `Passed!` lines, exit 0 |
-| A test DLL with **no** tests still gives exit 0 | deleted the only test from one scratch project, ran bare `dotnet test` | `Passed!` count **1**, `No test is available` count **1**, **exit 0** |
+| A test DLL with **no** tests still gives exit 0 | deleted the only test from one scratch project, ran bare `dotnet test` | `Passed!` count **0**, `No test is available` line **1**, **exit 0** |
 | `dotnet run` returns the app's exit code | scratch console app: `return 3`, then clean | `3`, then `0` |
 | A test project can launch its referenced app's DLL | scratch: xunit project running the console app as a child process | failed on the template string (exit 1), passed after a real start line (exit 0), **no NuGet package added** |
 | `System.Text.Json` needs no package | the toy compiled with only the template's packages | `using System.Text.Json;` built fine |
 | JSON schema tooling exists for .NET (a JSON schema is defined in the survey below) | `dotnet package search JsonSchema.Net` | `JsonSchema.Net` 9.4.0, `NJsonSchema` 11.6.1, exit 0 |
 | The contract-page checks behave both ways | scratch `docs/contract/v1.md`: correct, wrong version, missing | `test -f` 0 / version grep 0 / fence grep 0; version grep **1** when the content said `Version: 2`; `test -f` **1** when deleted |
 | A decorated version line fails the check | wrote `**Version:** 1` in the scratch page | `grep -qE '^Version: 1$'` exit **1** |
-| VDA 5050 publishes a human document *and* JSON schemas | fetched `raw.githubusercontent.com/VDA5050/VDA5050/main/README.md` and the VDA 5050 v2.1.0 PDF text this session | README: "If there are any differences between the markdown document/JSON schemas on GitHub and the published document by the VDA, the PDF on the VDA website is valid"; PDF: "JSON schemas are available for validation in the public git repository" |
+| The wire shape of a default-serialized `ShuttleStatus` | scratch console app referencing the shape, default `System.Text.Json` options | `{"ShuttleId":"SH-01","State":"idle","Position":"A02-L04","Timestamp":"2026-10-08T12:00:00Z","FaultReason":null}` — PascalCase names, ISO 8601 `Z` timestamp, the optional field appears as `null` |
+| A `DateTime` timestamp survives the roundtrip | the same scratch app | `back == sent` prints `True`; the deserialized value prints `2026-10-08T12:00:00.0000000Z` — kind and ticks survive |
+| The Tier 3 shapes, with the real message name | scratch `Contracts` + `Contracts.Tests`, built as written in the hints | `Passed: 2`, exit 0; `--list-tests` prints the two `ShuttleStatusTests` names and no `Test1` |
+| The `FleetManager` shapes, options A and B | scratch console app + xunit project, built as written in the hints | `Passed: 2`, exit 0; with `Hello, World!` back in `Program.cs`: `Failed: 2`, exit 1, `Assert.DoesNotContain() Failure: Sub-string found`; restored: exit 0 |
+| The new message checks pass on a finished fixture | repo-shaped scratch: page, type file, test file all present | all seven greps exit 0, both field loops print nothing |
+| The new message checks fail on today's repo | run the same block here | section grep exit **1**, type-file `test -f` exit **1**, record grep exit **1**, the page loop prints all five names as missing, and the test-file loop prints the same five as missing (greps exit 2 — file absent) |
+| An incomplete wire-shape test is caught | scratch test file asserting only two of the five names | the loop prints the three missing names |
+| The Tier 3 page skeleton passes the page checks | skeleton page with `<...>` placeholders, exactly as printed in the hints | `test -f` 0, version grep 0, fence grep 0, section grep 0, field loop prints nothing |
+| VDA 5050 publishes a human document *and* JSON schemas | fetched `raw.githubusercontent.com/VDA5050/VDA5050/main/README.md` and the VDA 5050 v2.1.0 PDF text this session | README: "If there are any differences between the markdown document/JSON schemas on GitHub and the published document by the VDA, the PDF on the VDA website is valid"; PDF: "JSON schemas are available for validation in the public git repository" — **2026-10-07**, not re-run |
 
 Three terms used in the table above, each defined again in the lecture: a **roundtrip test**
 sends a value through JSON and back and compares the two; a **wire-shape test** checks the
@@ -131,6 +143,9 @@ Not yet verified:
 - The M0 container build. No Dockerfile yet — that is lesson 03.
 - How many messages M2 will need, and whether the contract page still reads well with
   twenty of them.
+- How M2 documents the grown contract: a new `v2.md`, or extra sections added to `v1.md`.
+  AGENTS.md's rule — a change needs a decision record and a version bump — is written on
+  the page; the concrete outcome is M2's decision, not measured here.
 - Behaviour under a real broker: dropped, duplicated, and delayed messages. M2.
 
 ---
@@ -161,7 +176,7 @@ that is the end product. M0 has one message type.
 
 ---
 
-## Decision
+## Decision 1: the contract form
 
 **Chosen for M0: option A — one markdown page per contract version, in `docs/contract/`,
 the first one named `v1.md`, carrying a plain `Version:` line.**
@@ -183,10 +198,91 @@ reliable. That decision gets its own record — spec numbering keeps `02` for tr
 `03` for the database, so a contract-form record would be `04` or later (numbering rule in
 [decision record 01a, section 6](../decisions/01a-tests-move-to-lesson-02.md)).
 
-This lesson writes no new decision record. AGENTS.md already fixes `docs/contract/` as the
-home of the contract, and the spec already names JSON schemas as the end product. The page
-structure below is a lesson convention — the same kind of thing as lesson 01's acceptance
-commands. It becomes a decision record the moment it changes.
+The page structure is a lesson convention — the same kind of thing as lesson 01's
+acceptance commands. It becomes a decision record the moment it changes.
+
+---
+
+## Survey 2: which message family comes first
+
+The spec names four message families for M2: **commands, status, alarms, recovery**. The
+first real message must come from one of them. Which one?
+
+The general survey rule says "up to three options." The spec names four families, and this
+assignment must say why the other three wait. So the survey keeps three options — the three
+real ways to answer "what does M0 define first" — and the decision below names why alarms
+and recovery are not candidates at all.
+
+| | A: status first | B: command first | C: wait until M2 |
+|---|---|---|---|
+| What M0 defines | a report: who, what state, where, when, what is wrong | an order: who does what, and where | no real message — M0 tests a stub |
+| What the spec already fixed | the `State` values: M1 names `idle, moving, loading, unloading, fault` | almost nothing: a command's payload belongs to M3's task model | nothing |
+| First honest consumer | a single shuttle reporting (M1 builds it) | the fleet manager and its command logic (M3) | no consumer at M0 |
+| Cost if the shape is guessed wrong | low — the field set is small and the spec already named the states | high — a guessed task model gets thrown away at M3 | M0's "one real message type defined and unit tested" is simply not met |
+
+## Decision 2: `ShuttleStatus`, a status report, comes first
+
+**Chosen: option A. The first real message is `ShuttleStatus`, sent by a shuttle to the
+fleet manager.**
+
+Why status wins over command:
+
+1. **The spec already fixed its hardest field.** M1 names the shuttle state machine:
+   `idle, moving, loading, unloading, fault`. A status message documents values the spec
+   already decided — nothing invented.
+2. **It works today with one shuttle.** A shuttle reports; no decision logic is needed
+   (that is M3's task queue), no acknowledgement is needed (an acknowledgement is a reply
+   that says "order received" — it belongs to M2's command lesson).
+3. **It is never replaced.** The spec's own M2 "done when" says *"a command, an
+   acknowledgement, and status updates make a full round trip"*. M3 tracks fleet state from
+   it. M5 heartbeats are status reports at a cadence — `Timestamp` is the field that makes
+   "is this report fresh" answerable. M7's dashboard draws from it.
+4. **It stays small honestly.** Five fields, one optional. Nothing to invent.
+
+Why command (option B) is rejected for the first slot — it is **second**, at M2, not now:
+
+- A command's payload is a task: go to this lane, take this pallet. The task model is
+  M3's work. Guessing it at M0 means throwing it away at M3.
+- Commands bring the hardest M2 lesson with them: an idempotency key (a field that tells a
+  duplicate copy from a fresh one), an acknowledgement, and retries. That is a whole M2
+  lecture, not a first message.
+
+Why alarms and recovery are rejected for the first slot:
+
+- **Alarms** need a severity and code taxonomy. The spec puts that in M5 ("Alarms with
+  severity") beside real faults. Inventing severities at M0 would be filler fields.
+- **Recovery** is what an operator acknowledges after a fault (M5, M7). At M0 there are no
+  faults, so there is nothing to recover. A recovery message with no fault model is a
+  message about nothing.
+
+Why "wait" (option C) is rejected: M0's "done when" is explicit — *"one real message type
+defined and unit tested."* Waiting empties M0 of its one real artifact.
+
+The wire casing is fixed too. JSON field names are case-sensitive, and this contract
+spells them **exactly like the C# properties**: `ShuttleId`, `State`, `Position`,
+`Timestamp`, `FaultReason`. Measured: default `System.Text.Json` options emit exactly
+those names — the serializer's default *is* the contract, and no naming configuration
+exists anywhere for one message. Real-world honesty: VDA 5050, the published AGV standard,
+uses camelCase names. Our two wire consumers are both C#. If a non-C# consumer joins
+later, that is a signature change — a decision record and a version bump, exactly as
+AGENTS.md says.
+
+**Does this choice need a decision record? No — and here is the test it passes.**
+Decision records log *changes* to a contract (AGENTS.md: "Changing it needs a decision
+record"). There is no contract yet: `docs/contract/v1.md` is zero bytes. Nothing changes;
+the first content is being authored. The choice is written down here, with its reasons and
+its rejected options, in the same spirit a decision record would demand. The moment anyone
+**changes** `ShuttleStatus` — renames a field, adds one, switches casing — that change
+needs a record and a version bump, and the page's closing note says so. That rule is
+already in AGENTS.md; it does not need this lesson to invent a new record.
+
+**How this message travels into M2.** `ShuttleStatus` is written to be kept, not replaced.
+M2 will grow the contract to the full round trip — a command, its acknowledgement, alarms,
+recovery — and that growth is a change, so per AGENTS.md it gets a decision record and a
+version bump: the natural shape is a `v2.md` that keeps `ShuttleStatus` and adds the new
+messages, while `v1.md` stays readable. If M2 must alter `ShuttleStatus` itself, the same
+mechanism applies. Nothing in this lesson freezes anything; the versioning rule is the
+freezer.
 
 ---
 
@@ -214,7 +310,9 @@ The rule comes from AGENTS.md, quoted in *Where this fits* above: documented, ve
 change needs a decision record and a version bump. The page is where that rule becomes
 something you can point at.
 
-The structure — this part is mine to specify, the content is yours:
+The structure — this part is mine to specify. The message, its fields, and the versions
+are fixed in the assignment below. The words are yours: the direction sentence, each
+field's meaning written so a stranger understands it, and the example payload's values.
 
 1. The page lives at `docs/contract/v1.md`. One file per version. When the contract
    changes, you add `v2.md`. The old page stays, so an old payload can still be read.
@@ -245,6 +343,9 @@ happens when one goes missing is a different lesson.
 
 The page describes. The type enforces.
 
+The first message is `ShuttleStatus` — a status report a shuttle sends to the fleet
+manager. Why status comes first is decided above. Here is what the type does with it.
+
 A **message type** is a C# type in `src/Contracts` whose JSON form is the message. Decision
 record 01, section 4, reason 2 is where this comes from: in C#, a wrong field name or a
 wrong type stops the build. Two programs and the tests all compile against one type, so a
@@ -255,8 +356,8 @@ these two calls are the whole core of every test you will write, whatever carrie
 messages later:
 
 ```csharp
-var json = JsonSerializer.Serialize(message);              // type -> text
-var back = JsonSerializer.Deserialize<YourType>(json);     // text -> type
+var json = JsonSerializer.Serialize(message);                  // type -> text
+var back = JsonSerializer.Deserialize<ShuttleStatus>(json);    // text -> type
 ```
 
 `Serialize` turns a value into the payload — the text that travels between the two
@@ -265,9 +366,35 @@ needs no NuGet package — it ships inside the .NET shared framework (decision r
 reason 3), and the toy below compiled with only the template's packages.
 
 One detail that decides your field names: JSON field names are case-sensitive. `Route` and
-`route` are two different fields to the program that reads them. Pick the casing once, write
-it in the contract page, and make the type produce exactly that. Your wire-shape test below
-is what keeps the two honest.
+`route` are two different fields to the program that reads them. This assignment fixes the
+casing: the JSON names are spelled exactly like the C# properties — `ShuttleId`, `State`,
+`Position`, `Timestamp`, `FaultReason`. Measured: default `System.Text.Json` options emit
+those names, no configuration needed. Your wire-shape test below is what keeps the page
+and the type honest about the spelling.
+
+The five fields, and why a controls engineer would recognize them:
+
+- `ShuttleId` — which shuttle is talking. Every report needs it, or the fleet manager
+  cannot tell two shuttles apart.
+- `State` — where the shuttle's state machine is. The allowed values are the spec's own
+  M1 states: `idle, moving, loading, unloading, fault`. One value per report.
+- `Position` — the rack lane the shuttle is in. Lanes arrive with M1's rack model; the
+  field is in the contract now because a status without a place is not a status.
+- `Timestamp` — when the report was made. The C# type is `DateTime`; on the wire it is a
+  string, ISO 8601 UTC. Measured, from a kind-UTC value:
+  `"Timestamp":"2026-10-08T12:00:00Z"`, and the roundtrip comes back equal. At M5 this
+  field is what turns a report into a heartbeat: a status whose timestamp is too old is
+  the first sign of a lost shuttle.
+- `FaultReason` — what is wrong. Optional: it is meaningful only when `State` is `fault`.
+  At M5 the spec's own fault list fills it in: blocked path, lost communication, pallet
+  not detected. When nothing is wrong, the field is `null` — measured, it stays in the
+  JSON as `"FaultReason":null`. That is normal for an optional field, not a bug.
+
+The whole wire shape, measured with default options:
+
+```json
+{"ShuttleId":"SH-01","State":"idle","Position":"A02-L04","Timestamp":"2026-10-08T12:00:00Z","FaultReason":null}
+```
 
 Where the type lives, and why it matters:
 
@@ -282,8 +409,12 @@ Where the type lives, and why it matters:
   silent pass — lesson 01 measured the before, you will feel the after.
 
 Where this is used later: M1 gives `ShuttleSim` its own project pointing at `Contracts`
-(three more edges, seven in total). M2 puts the real command, status, alarm, and recovery
-types in the same project and puts them on MQTT. Every later milestone reads this type.
+(three more edges, seven in total). M2 keeps `ShuttleStatus` and adds the command,
+acknowledgement, alarm, and recovery types to the same project, then puts them on MQTT —
+decision record 02's territory. M3 reads status reports into fleet state. M5 reads
+`Timestamp` for heartbeats and `FaultReason` for alarms. M7's dashboard draws shuttle
+states straight from this type. Every later milestone reads it — which is exactly why the
+first message had to be a real one.
 
 ### A test that can fail
 
@@ -352,7 +483,9 @@ to fail."
 
 The contract is a page in `docs/contract/` with a version number on it. People read it.
 
-The message type is a C# record in `Contracts`. The compiler checks it.
+The first message is `ShuttleStatus`, a status report: who, what state, where, when, and
+what is wrong. It is a C# record in `Contracts`. The compiler checks it. M2 grows the page;
+this message stays.
 
 The tests prove the page and the type still agree. They prove it by being able to fail —
 measured, in three places: a field rename turned one test red, an empty test passes for the
@@ -368,10 +501,15 @@ The placeholders go: `Class1.cs`, both `UnitTest1.cs`, the empty `Test1`, and th
 A toy: a bus stop display. It is **not** the assignment — different domain (transit, not
 pallets), different names, no solution file, no `src/`, no `FleetManager`. It shows three
 mechanics: a message type, a contract page, and two tests that can fail. Do not copy it.
-Your message has to be one a shuttle fleet actually exchanges — the spec's M2 names the
-families (commands, status, alarms, recovery) — and its name and fields are yours to choose.
+The toy stays a toy on purpose: a teaching walkthrough has to be small enough to see the
+whole thing in one glance.
 
-Source files, all under `/tmp/opencode/lesson02-scratch/walkthrough/`:
+The assignment's message is not a toy. It is `ShuttleStatus`, fixed in the assignment
+below: a message the end product really exchanges, chosen because every later milestone
+consumes it. After this lesson, M2 grows the same contract page — `ShuttleStatus` is kept,
+not replaced.
+
+Source files, all under `/tmp/opencode/lesson02-rev/walkthrough/`:
 
 ```
 docs/contract/v1.md
@@ -382,7 +520,7 @@ Stop.Core.Tests/ArrivalTests.cs
 Step 1 — scaffold and delete the template stubs:
 
 ```bash
-mkdir -p /tmp/opencode/lesson02-scratch/walkthrough && cd /tmp/opencode/lesson02-scratch/walkthrough
+mkdir -p /tmp/opencode/lesson02-rev/walkthrough && cd /tmp/opencode/lesson02-rev/walkthrough
 dotnet new classlib -n Stop.Core
 dotnet new xunit    -n Stop.Core.Tests
 rm Stop.Core/Class1.cs Stop.Core.Tests/UnitTest1.cs
@@ -553,14 +691,17 @@ Answer these without notes, the way you would in an interview:
 
 1. The contract page and the C# type both describe the same message. Which one does the
    compiler check, which one does a person read, and what proves they still agree?
-2. Why does a message need a version number? Two programs upgrade on different days —
-   what exactly goes wrong without one?
+2. Your tech lead asks why the first contract message is a status report and not a command.
+   What do you say? Name the two things M2's command lesson needs that a status does not,
+   and the field this contract gets from M1's own spec. (The survey and Decision 2 give
+   the reasons; say them in your own words.)
 3. You rename a field in the record. The roundtrip test still passes. Why does it pass,
    and which test catches the rename? Point at the measured output above.
 4. Your teammate says "`dotnet test` exits 0, so we have proof." What did I measure this
    session that disproves that?
-5. AGENTS.md says changing the contract needs a decision record and a version bump. What
-   does `docs/contract/v1.md` have to do with that rule?
+5. Two programs upgrade on different days. Why does the page carry a version number, and
+   what does AGENTS.md say happens when a message's shape changes? What will M2's new
+   messages do to this page — and what keeps `ShuttleStatus` safe?
 
 ---
 
@@ -575,16 +716,41 @@ explain every line.
    [The contract is a versioned page](#the-contract-is-a-versioned-page): a plain
    `Version: 1` line on its own line, one section per message with direction and a field
    table, at least one example payload inside a JSON code fence, and the closing note about
-   decision records and version bumps. The content — which message, which fields — is
-   yours to choose.
-2. **The first real message type.** A `public` type in `src/Contracts`, in its own file,
-   that is not named `Class1`. Its JSON form must match the contract page exactly: same
-   field names, same types. Serialize it with `System.Text.Json` — no new NuGet package
-   for this (measured: it ships with the framework).
+   decision records and version bumps.
+   The page describes exactly one message: **`ShuttleStatus` — a status report sent by a
+   shuttle to the fleet manager.** The field names, JSON types, and required flags below
+   are the contract; they are fixed, not a menu. Write the direction sentence, the
+   meanings, the allowed `State` values, and the example payload in your own words — but
+   do not rename, reorder, or drop a field.
+
+   | Field | JSON type | C# type | Meaning | Required |
+   |---|---|---|---|---|
+   | `ShuttleId` | string | string | Which shuttle sent the report, e.g. `SH-01` | yes |
+   | `State` | string | string | Where the shuttle's state machine is. One of: `idle`, `moving`, `loading`, `unloading`, `fault` (the states the spec names in M1) | yes |
+   | `Position` | string | string | The rack lane the shuttle is in, e.g. `A02-L04` | yes |
+   | `Timestamp` | string, ISO 8601 UTC, e.g. `2026-10-08T12:00:00Z` | DateTime | When the report was made | yes |
+   | `FaultReason` | string | string? | What is wrong. Meaningful only when `State` is `fault`; otherwise `null` or absent | no |
+
+   Why these five, in one line each, so you can say them out loud: `ShuttleId` tells the
+   fleet manager which shuttle is talking. `State` is the spec's own M1 state machine
+   (idle, moving, loading, unloading, fault). `Position` is where the shuttle is, so a
+   status without a place is not a status. `Timestamp` is when the report was made — the
+   field that turns reports into heartbeats at M5. `FaultReason` carries what is wrong, so
+   M5's fault reports ("blocked path, lost communication, pallet not detected") have a
+   field to land in.
+2. **The first real message type.** A `public` type in `src/Contracts/ShuttleStatus.cs` —
+   one file, named after the message. Its JSON form must match the contract page exactly:
+   same field names, same casing, same types. Serialize it with `System.Text.Json` default
+   options — no naming policy, no attributes: the property names *are* the wire names
+   (measured above). No new NuGet package for this (measured: it ships with the framework).
+   Shape: you already know records; the record shape in the hints is the one the tests
+   below are built against.
 3. **Real tests in `Contracts.Tests`.** At least: one roundtrip test (serialize,
-   deserialize, assert equal) and one wire-shape test (the JSON text carries the field
-   names the page documents). Every `[Fact]` carries at least one `Assert`. Test names say
-   what they prove.
+   deserialize, assert equal) and one wire-shape test (the JSON text carries **all five**
+   field names — `ShuttleId`, `State`, `Position`, `Timestamp`, `FaultReason` — the page
+   documents). Every `[Fact]` carries at least one `Assert`. Test names say what they
+   prove. The acceptance block below also checks that all five names appear in this test
+   file, so a wire test that asserts only two names will not pass the gate.
 4. **A real test in `FleetManager.Tests`.** Decision record 01 §10: each test project holds
    at least one real test of something real. Pick one of the two options in
    [A test that can fail](#a-test-that-can-fail) — run the skeleton, or test a tiny pure
@@ -615,9 +781,32 @@ grep -qE "^Version: ${V}\$" "$DOC"               # exit 0 — content matches fi
 grep -q '```json' "$DOC"                         # exit 0 — an example payload is there
 ```
 
-Measured today: `test -f` exits 1, because the page does not exist yet, and the two greps
-exit **2** with `No such file or directory` (grep's exit code for a missing file, not 1 for
-"no match"). Run them again after you create the page.
+Measured today: `test -f` exits **0**, because an empty `v1.md` already exists in
+`docs/contract/`, and both greps exit **1** — an empty file has no lines to match, so
+grep finds nothing. Run them again after you create the page; all three must print 0.
+
+```bash
+# The fixed message exists, in all three artifacts
+grep -q '^## ShuttleStatus$' docs/contract/v1.md                        # exit 0
+test -f src/Contracts/ShuttleStatus.cs                                  # exit 0
+grep -rq 'public record ShuttleStatus' src/Contracts --include='*.cs'   # exit 0
+test -f src/Contracts.Tests/ShuttleStatusTests.cs                       # exit 0
+for f in ShuttleId State Position Timestamp FaultReason; do
+  grep -q "$f" docs/contract/v1.md || echo "page missing: $f"           # prints nothing
+done
+for f in ShuttleId State Position Timestamp FaultReason; do
+  grep -q "$f" src/Contracts.Tests/ShuttleStatusTests.cs 2>/dev/null || echo "test missing: $f"
+done                                                                    # prints nothing
+```
+
+Measured both ways. On a finished fixture (page, type file, and test file all in place)
+every check above exits 0 and both loops print nothing. On this repo today: the section
+grep exits **1**, both `test -f` checks exit **1**, the record grep exits **1**, and the
+page loop prints all five names as missing. The second loop's file does not exist yet, so
+its greps exit **2** (missing file — measured, and `2>/dev/null` keeps that quiet) and it
+prints five "test missing" lines — and once the file exists, it still catches a
+half-written wire test: measured, a scratch file asserting only two of the five names made
+the loop print the other three.
 
 ```bash
 # The placeholders are gone — all four print nothing
@@ -698,8 +887,8 @@ exit 3), so this check is the app's exit code, not the launcher's.
 ### Stretch goal
 
 Make the page and the type check each other: add a test that reads the example payload out
-of `docs/contract/v1.md` (the JSON code fence) and deserializes it into your
-message type. Then break it on purpose.
+of `docs/contract/v1.md` (the JSON code fence) and deserializes it into `ShuttleStatus`.
+Then break it on purpose.
 
 Accept: `dotnet test` exits 0 with the page as written; after you edit the example's field
 name to something the type does not have, `dotnet test` exits 1; after you revert, exit 0

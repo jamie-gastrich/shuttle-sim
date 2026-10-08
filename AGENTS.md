@@ -34,6 +34,7 @@ The default orchestrator agent may coordinate and answer questions but follows t
 - **No hard-coded names, topics, timeouts, retry counts, or sizes.** Use configuration.
 - **Shuttles talk to the fleet manager only through the contract.** No shortcuts through shared code or shared memory.
 - Tests must pass before a review can pass.
+- **No throwaway work.** Every assignment builds a real piece of the end product that carries forward into later milestones. Worked examples are toys, clearly labeled, and never assigned. When an assignment needs a design choice the spec has not settled (message shapes, state values), the professor decides it explicitly in the lesson with reasons rather than leaving it to the owner — the owner's work must always count toward the end product.
 - Experiments and verification builds happen in `/tmp/opencode`, never in this repo, and are cleaned up afterward.
 - README milestone states change only when the reviewer passes the work, with the verifying command noted.
 - Keep processes clean. Do not leave a message broker, container, database, or `dotnet run` process running after a session. Run `docker compose down` when done.

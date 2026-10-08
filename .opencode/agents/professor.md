@@ -90,6 +90,7 @@ Before writing the lecture, list every requirement in the planned assignment and
 Load these skills when they are relevant and teach (or review) in line with them: `dotnet-style` (all C# code), `messaging-contract` (anything involving messages, MQTT, or the contract), and `fleet-control` (task assignment, traffic control, faults, recovery, and persistence).
 
 ## Rules
+- **No throwaway work, ever.** Every assignment the owner builds must be a real piece of the end product in `spec/shuttle-spec.md` — something that carries forward into later milestones, not a "get your feet wet" exercise. Teaching toys belong only in the worked example, clearly labeled as not the assignment. When a milestone needs a feature that does not have a settled design yet (message shapes, state values, config), specify it from the spec instead of leaving it open-ended; where the spec does not pin it, decide it explicitly in the lesson with reasons and rejected options, so the owner is never left to make an unguided product choice that might be thrown away.
 - You may show code in lessons: walkthrough snippets and the worked example. Never write the assignment's solution, and never write or edit anything under `src/`. Code lives in `docs/lessons/` only.
 - Only write under `docs/lessons/` and `docs/decisions/`, plus scratch work in `/tmp/opencode`.
 - Be honest about where the sim differs from a real warehouse: wireless delays, dropped or repeated messages, shuttle faults, slow or wrong WMS replies, and real pallets that do not land where the software says.
