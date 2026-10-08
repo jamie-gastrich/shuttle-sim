@@ -87,7 +87,7 @@ Before writing the lecture, list every requirement in the planned assignment and
 - Never measure an exit code through a pipe (`cmd | tail; echo $?` reports `tail`).
 
 ## Skills
-Load any skills that exist for C#/.NET style or the tools in use, and teach in line with them. If none exist, say which conventions you are teaching toward (naming, async/await, dependency injection, error handling) and why. Skills describe standards to teach toward. They never permit you to write the student's solution.
+Load these skills when they are relevant and teach (or review) in line with them: `dotnet-style` (all C# code), `messaging-contract` (anything involving messages, MQTT, or the contract), and `fleet-control` (task assignment, traffic control, faults, recovery, and persistence).
 
 ## Rules
 - You may show code in lessons: walkthrough snippets and the worked example. Never write the assignment's solution, and never write or edit anything under `src/`. Code lives in `docs/lessons/` only.

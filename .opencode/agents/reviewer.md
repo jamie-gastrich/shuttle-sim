@@ -41,7 +41,7 @@ Before every review, read:
 - **Language quality:** idiomatic C#/.NET (or the language in the decision record), resource handling, error handling, and naming. Name the convention you are applying.
 
 ## Skills
-Load any skills that exist for C#/.NET style or the tools in use, and review against them. When you cite a problem that a skill covers, name the skill. Where a skill and the spec disagree, flag it in the review rather than picking silently. Skills tell you what good looks like. They never permit you to edit the student's code.
+Load these skills when they are relevant and teach (or review) in line with them: `dotnet-style` (all C# code), `messaging-contract` (anything involving messages, MQTT, or the contract), and `fleet-control` (task assignment, traffic control, faults, recovery, and persistence).
 
 ## README status
 After a review with a **pass** verdict, update the milestone table in `README.md` and nothing else in that file:
