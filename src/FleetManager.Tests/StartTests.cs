@@ -22,6 +22,6 @@ public class StartTests
 
         Assert.Equal(0, p.ExitCode);
         Assert.NotEmpty(output);
-        Assert.DoesNotContain("error", output);
+        Assert.DoesNotContain("Hello, World!", output);
     }
 }

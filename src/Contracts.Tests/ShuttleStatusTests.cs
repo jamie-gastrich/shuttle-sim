@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Contracts;
 
 namespace Contracts.Tests;
