@@ -10,7 +10,9 @@ Open a tier only when you are stuck. Stop reading as soon as the tier gets you m
   `Contracts`, and a **test** that proves they agree. Ask which of the three is missing or
   still a placeholder before you touch the terminal.
 - Run the assignment's "placeholders are gone" block first. It prints what to delete today:
-  three paths, four lines, one line, two paths. Work until all four print nothing.
+  three paths, four lines, one line, two paths. Work until all four print nothing. The
+  third check looks inside `src/FleetManager` only — the app, not the tests — so your own
+  `Assert.DoesNotContain("Hello, World!", …)` line is not a hit.
 - A roundtrip test passes and you still feel it proves nothing? That feeling is the third
   concept. The worked example shows the fix: a second test that asserts the field names in
   the JSON text. Measured: a field rename slipped past the roundtrip test and was caught by
@@ -261,7 +263,9 @@ public class StartTests
 
 Measured: with `Hello, World!` back in `Program.cs` this test **failed** (exit 1,
 `Assert.DoesNotContain() Failure: Sub-string found`); with the template start line it
-passed (exit 0).
+passed (exit 0). Your assertion names `Hello, World!` on purpose, and the acceptance grep
+searches `src/FleetManager` — the app — so that line does not trip it. Measured on the
+finished repo: the scoped grep prints nothing.
 
 Option B, **test the pure function** — a tiny piece of code that takes input, returns a
 value, and touches nothing else. It needs option B's `Program.cs` above, because
@@ -317,7 +321,7 @@ done                                                                # prints not
 # Placeholders are gone — all four print nothing (judge by output, not exit code)
 find src -name 'Class1.cs' -o -name 'UnitTest1.cs'
 grep -rn 'Test1' src --include='*.cs'
-grep -rn 'Hello, World!' src --include='*.cs'
+grep -rn 'Hello, World!' src/FleetManager --include='*.cs'   # the app only: your test may name the string
 for f in $(grep -rl '\[Fact\]' src --include='*.cs'); do grep -q 'Assert' "$f" || echo "$f"; done
 ```
 
@@ -337,7 +341,7 @@ rm -f "$T" "$L"
 F=$(mktemp)
 dotnet run --project FleetManager/FleetManager.csproj > "$F" 2>&1; echo $?   # 0
 test -s "$F"; echo $?                                                        # 0: it printed something
-! grep -q 'Hello, World!' "$F"; echo $?                                      # 0: template string gone
+! grep -q 'Hello, World!' "$F"; echo $?                                      # 0: the program does not print it
 rm -f "$F"
 ```
 

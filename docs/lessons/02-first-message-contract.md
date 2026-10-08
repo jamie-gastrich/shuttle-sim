@@ -92,7 +92,11 @@ Everything below I checked by running a command or by reading a file. Rows marke
 **2026-10-07** were measured when this lesson was first written, in
 `/tmp/opencode/lesson02-scratch/` (deleted afterwards). Every other row was re-measured on
 **2026-10-08** for this revision, in `/tmp/opencode/lesson02-rev/` (deleted afterwards).
-I never wrote to `src/`, never built it, and never started a process there.
+Rows marked **gate fix** were measured on **2026-10-08** in
+`/tmp/opencode/lesson02-gate/` (deleted afterwards), after review 02, issue R1. On this
+repo I ran read-only `find` and `grep` only; every build, test run, and `dotnet run` behind
+those rows ran on a copy of `src/` under `/tmp/opencode`. I never wrote to `src/` and never
+started a process there.
 
 | Claim | How I checked | Result |
 |---|---|---|
@@ -101,7 +105,11 @@ I never wrote to `src/`, never built it, and never started a process there.
 | The contract-page checks on today's empty page | run on this repo | `test -f` exit **0** (the file exists); version grep exit **1**; fence grep exit **1** (an empty file has nothing to match) |
 | The placeholders exist today | `find src -name 'Class1.cs' -o -name 'UnitTest1.cs'` | prints 3 paths: `src/Contracts/Class1.cs`, both `UnitTest1.cs` |
 | `Test1` exists today | `grep -rn 'Test1' src --include='*.cs'` | 4 lines, exit 0 |
-| The template string exists today | `grep -rn 'Hello, World!' src --include='*.cs'` | 1 line, exit 0 |
+| The template string exists today | `grep -rn 'Hello, World!' src/FleetManager --include='*.cs'` on the pre-assignment tree (`git archive 3f3017b src`) | 1 line — `src/FleetManager/Program.cs:2` — exit 0 |
+| **gate fix** All four placeholder checks are empty on a finished solution | this repo, read-only `find`/`grep`, 2026-10-08 | `find`: no output; `Test1` grep: no output, exit 1; scoped `Hello, World!` grep: no output, exit 1; `[Fact]`-with-no-`Assert` loop: no output |
+| **gate fix** The scoped check still fails when the template is really back | copy of `src/` in `/tmp/opencode/lesson02-gate/`, `Program.cs` restored to `Console.WriteLine("Hello, World!");` | source grep prints `src/FleetManager/Program.cs:2`, exit 0; skeleton-run `! grep` exits 1; `dotnet test` exits 1 with `Assert.DoesNotContain() Failure: Sub-string found` |
+| **gate fix** The `Passed!` / `No test is available` counts are not counting noise | full `dotnet test` capture on the copy (20 lines) | exactly 2 lines contain `Passed`/`Failed`, one per test project; `No test is available` absent, count 0 |
+| **gate fix** The runtime half catches what the source grep cannot | copy of `src/` whose `Program.cs` prints `Console.WriteLine("Hello" + ", World!");` | source grep: no output, exit 1 (passes); skeleton-run `! grep` exits 1; output `Hello, World!` |
 | The graph is four edges today | `grep -rn "ProjectReference" --include=*.csproj src \| wc -l` | `4` |
 | `Contracts` holds only the stub today | `find src/Contracts -name '*.cs' -not -path '*/bin/*' -not -path '*/obj/*' -not -name 'Class1.cs'` | no output (without the `bin`/`obj` exclusions it prints 3 generated files — measured, that matters) |
 | No `.cs` is a copy today | the `md5sum`/`uniq -D` check from lesson 01, in `src/` | no output |
@@ -137,9 +145,10 @@ file `dotnet test` runs.
 Not yet verified:
 
 - The assignment itself. You have not written it, so nothing about it is a fact yet.
-- `dotnet test` inside this repo's `src/` this session. I did not run it: a build dirties
-  the tracked `bin/`/`obj/` files (review 01, issue S1). The lesson-01 numbers for `src/`
-  come from review 01.
+- `dotnet test` inside this repo's `src/` this session. I did not run it: builds belong in
+  `/tmp/opencode` for me, so the rows above run on a copy of `src/`. (The copy gave
+  `Passed!` count 2 and `dotnet test` exit 0; the original tree was left untouched.) The
+  lesson-01 numbers for `src/` come from review 01.
 - The M0 container build. No Dockerfile yet — that is lesson 03.
 - How many messages M2 will need, and whether the contract page still reads well with
   twenty of them.
@@ -812,13 +821,35 @@ the loop print the other three.
 # The placeholders are gone — all four print nothing
 find src -name 'Class1.cs' -o -name 'UnitTest1.cs'
 grep -rn 'Test1' src --include='*.cs'
-grep -rn 'Hello, World!' src --include='*.cs'
+grep -rn 'Hello, World!' src/FleetManager --include='*.cs'   # the app only: a test may name the string
 for f in $(grep -rl '\[Fact\]' src --include='*.cs'); do grep -q 'Assert' "$f" || echo "$f"; done
 ```
 
 Today the first prints 3 paths, the second 4 lines, the third 1 line, the fourth 2 paths.
 All four are measured above; all four must be empty afterwards. (`find` and `grep` exit 0
 or 1 by match, so judge these by output, not by exit code.)
+
+Read the third command's path before you run it. It searches `src/FleetManager` — the app
+— and not the whole of `src`. `grep -r` walks into the directory you name, and
+`src/FleetManager.Tests` is a sibling of that directory, not a child, so your test file is
+never searched. That matters: hints Tier 3 option A asserts
+`Assert.DoesNotContain("Hello, World!", output)`, and your test *naming* the string is how
+it proves the string is gone. An unscoped grep over all of `src` would print your own
+assertion line and fail a correct solution. Measured: that is exactly what review 02's
+issue R1 caught. A gate the reference solution cannot pass teaches people to work around
+the gate instead of fixing the thing.
+
+The source grep is one half. The skeleton-run block below is the other half: it greps the
+output the program actually printed. Those are two questions — is the text in the app, and
+does the app print it. Text can be clean while behaviour is still wrong: a string built out
+of pieces at runtime, say. Behaviour is the half an operator ever sees.
+
+Measured on a copy with the template line restored: the source grep printed
+`src/FleetManager/Program.cs:2`, the skeleton-run `! grep` exited 1, and `dotnet test`
+exited 1 with `Assert.DoesNotContain() Failure: Sub-string found`. Measured on a second
+copy whose `Program.cs` prints `Console.WriteLine("Hello" + ", World!");` — the text is
+split, so no source line holds it: the source grep printed nothing and passed, while the
+skeleton-run `! grep` still exited 1 on output `Hello, World!`. Two halves, two questions.
 
 ```bash
 # The type and the JSON roundtrip are where they belong
@@ -877,7 +908,7 @@ And the skeleton runs:
 F=$(mktemp)
 dotnet run --project FleetManager/FleetManager.csproj > "$F" 2>&1   # exit 0
 test -s "$F"                                                        # exit 0: it printed something
-! grep -q 'Hello, World!' "$F"                                      # exit 0: template string gone
+! grep -q 'Hello, World!' "$F"                                      # exit 0: the program does not print it
 rm -f "$F"
 ```
 
