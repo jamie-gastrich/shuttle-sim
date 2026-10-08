@@ -1,0 +1,16 @@
+# .NET build output
+bin/
+obj/
+
+# Test results
+TestResults/
+*.trx
+
+# IDE / editor
+.vs/
+.idea/
+*.user
+*.suo
+
+# Logs
+*.log
