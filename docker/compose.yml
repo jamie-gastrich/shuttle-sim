@@ -1,0 +1,16 @@
+name: shuttle-fleet
+services:
+  broker:
+    image: eclipse-mosquitto:2.0
+    ports:
+      - "127.0.0.1:${MQTT_HOST_PORT:-1883}:1883"
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+  database:
+    image: postgres:17
+    ports:
+      - "127.0.0.1:${DB_HOST_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER: ${SHUTTLE_DB_USER:-shuttle}
+      POSTGRES_PASSWORD: ${SHUTTLE_DB_PASSWORD:-shuttle}
+      POSTGRES_DB: ${SHUTTLE_DB_NAME:-shuttle}

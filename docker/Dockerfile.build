@@ -1,0 +1,7 @@
+FROM mcr.microsoft.com/dotnet/sdk:10.0
+WORKDIR /shuttle
+COPY global.json ./
+COPY src/ ./src/
+RUN dotnet build src/ShuttleFleet.slnx -v m
+RUN dotnet test src/ShuttleFleet.slnx -v m
+CMD ["dotnet", "test", "src/ShuttleFleet.slnx", "-v", "m"]
