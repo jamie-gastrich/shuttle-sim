@@ -483,8 +483,34 @@ From the repository root:
 ```bash
 test -f global.json                                  # exits 0
 grep -q '"rollForward": "latestFeature"' global.json # exits 0
-dotnet --version                                     # prints the version pinned in global.json
+dotnet --version                                     # exit 0 — the SDK in use satisfies global.json
 ```
+
+Read the exit code of `dotnet --version`, never the text alone. Measured: with a pin no
+installed SDK satisfies, it exits **155** with `A compatible .NET SDK was not found.` — and
+its stdout still printed `10.0.112 [/usr/lib/dotnet/sdk]`, so a printed number proves
+nothing on its own.
+
+The printed number is the version that was *resolved*, which under `latestFeature` may sit
+above the pin: the template help says it "uses the highest installed feature band and patch
+level that matches the requested major and minor … greater or equal than the specified
+value." So a machine holding only `10.0.200` would print `10.0.200`, not the pin (rule read
+off `dotnet new globaljson --help`; the literal `10.0.200` run is **not measured** here —
+only `10.0.112` is installed). What must hold is the relationship between the two numbers.
+Check it, reading the pin from the file so no version is typed twice:
+
+```bash
+PIN=$(python3 -c 'import json;print(json.load(open("global.json"))["sdk"]["version"])')
+RESOLVED=$(dotnet --version)                                         # must exit 0
+test "${RESOLVED%.*}" = "${PIN%.*}"                                 # exit 0: same major.minor band
+test "$(printf '%s\n%s\n' "$PIN" "$RESOLVED" | sort -V | tail -n1)" = "$RESOLVED"  # exit 0: RESOLVED >= PIN
+```
+
+`${RESOLVED%.*}` drops the last group, so `10.0.112` and `10.0.200` both become `10.0`.
+`sort -V` sorts by version number, so the later of the two lines is the higher version, and
+it must be `RESOLVED`. Measured on this machine: `PIN=10.0.112 RESOLVED=10.0.112`, both
+tests exit 0; with a scratch pin of `10.0.100` the same two tests pass against `RESOLVED=10.0.112`,
+which is the roll-up the check is built for.
 
 From `src/` (check exit codes directly, never through a pipe):
 
