@@ -10,7 +10,7 @@ Only the reviewer changes this table, and only after a passing review.
 
 | Milestone | Description | State |
 |---|---|---|
-| M0 | Repo and tooling | not started |
+| M0 | Repo and tooling | done |
 | M1 | Warehouse model and one shuttle | not started |
 | M2 | Message contract and transport | not started |
 | M3 | Fleet manager core | not started |
@@ -22,6 +22,8 @@ Only the reviewer changes this table, and only after a passing review.
 
 ### Verification notes
 Commands the reviewer ran to confirm each `done` milestone go here.
+
+**M0** — verified 2026-10-08, re-review in `docs/reviews/03-docker-services.md`. From repo root: `docker compose -f docker/compose.yml config --services` prints `broker` and `database`; `up -d`, `ps -q | wc -l` = 2, `docker run --rm --network shuttle-fleet_default eclipse-mosquitto:2.0 mosquitto_pub -h broker -t acceptance/probe -m ok` and `docker run --rm --network shuttle-fleet_default postgres:17 pg_isready -h database -U shuttle -d shuttle` both exit 0, `down`; `docker build -f docker/Dockerfile.build -t shuttle-fleet-build .` exit 0; `docker run --rm shuttle-fleet-build` exit 0 with `grep -c 'Passed!'` = 2; from `src/`, `dotnet build` and `dotnet test` exit 0. Fresh-container build and suite green; gates mutation-proven able to fail.
 
 ## Layout
 

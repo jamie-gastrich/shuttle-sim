@@ -442,3 +442,294 @@ a one-line fix from flipping. When it lands, the verification note should read:
   every build; `dotnet build-server shutdown` run; no broker, database, container, `dotnet
   run`, test host, or MSBuild node left running (`docker ps -a` shows only the pre-existing
   9-day-old `hello-world` container, which I left as I found it); `/tmp/opencode` empty.
+
+---
+
+# Re-review — 2026-10-08: the fixes, re-verified; M0 closes
+
+**Re-verified at:** commit `78b9a6a` (`M0: Add review documentation for Docker services and
+fresh-container build (lesson 03)`), branch `master`, `git status --porcelain` empty
+(exit 0) before I started. Since `27ac179` (the tip under the first review) exactly five
+files moved, all inside `78b9a6a`: `docker/Dockerfile.build` (one line deleted — should-fix
+1), `docs/lessons/03-docker-services.md` and `docs/lessons/03-docker-services-hints.md`
+(the professor's revision for should-fix 2 and the R1-class sweep),
+`docs/decisions/04-fresh-container-build.md` (§8 addendum), and this review file.
+`git diff 84633c6..HEAD -- src/` is still **0 lines** — `src/` has never moved since before
+lesson 03 began.
+
+The professor's caveat is closed here: the revised gates were previously verified only
+against a *copy* of the owner's tree. Everything below was run against **this committed
+tree**, from the directories the block names, with exit codes read directly (mktemp pattern
+where output is captured).
+
+**Verdict change: `pass with changes` → `pass` (lesson 03). M0 closes.**
+
+- **Should-fix 1 discharged, verified:** `docker/Dockerfile.build` is exactly six lines and
+  record 04 §3's shape — one `RUN` (`dotnet build`), the suite as `CMD`, no `RUN dotnet
+  test` layer. The old Phase 5 gate that forced the rejected shape is gone: within the
+  acceptance block (lesson lines 497–660) there is **no quoted `'dotnet test'` needle at
+  all** (`grep -cF "'dotnet test'"` = 0), and the honest record-shaped file passes every
+  revised Phase 5 gate (below) — where the removed gate exits **1** on the same file
+  (`grep -qF 'dotnet test' docker/Dockerfile.build` → exit 1), reconfirming the R1 defect
+  was real.
+- **Should-fix 2 discharged, verified:** the revised Phase 3 probes were run against the
+  committed tree — both exit 0 on the honest stack — and I re-ran **both** of my original
+  failure scenarios against them in a copy at `/tmp/opencode/rereview03` (deleted): each
+  passes every old gate and each is now caught (tables below). The lesson-quality defect is
+  fixed at the gate, not just documented.
+- **28 of 28** command-checkable criteria in the revised acceptance block pass. The block
+  changed shape (Phase 2's loopback line, Phase 3's two probes, Phase 5's two image probes,
+  Phase 6's anchored greps), so this is a fresh table, not the old one re-quoted.
+- New findings: two non-blocking **considers** (below), neither owner-blocking, neither a
+  regression. No blocker, no should-fix.
+
+## Commands re-run, verbatim key output
+
+### From the repository root
+
+**Phase 1 — the five files** — loop printed nothing (exit codes not judged, output is).
+
+**Phase 2**
+
+```
+$ docker compose -f docker/compose.yml config >/dev/null            exit 0
+$ docker compose -f docker/compose.yml config --services            exit 0
+database
+broker
+$ grep -q '^name: shuttle-fleet$' docker/compose.yml                exit 0
+$ for s in broker database; do … ; done                             (no output)
+$ grep -q 'image: eclipse-mosquitto:2.0' …                          exit 0
+$ grep -q 'image: postgres:17' …                                    exit 0
+$ ! grep -q ':latest' …                                             exit 0
+$ grep -q 'mosquitto.conf' …                                        exit 0
+$ docker compose … config | grep -c 'host_ip: 127\.0\.0\.1'         prints 2
+$ grep -Fq '${' …                                                   exit 0
+$ for v in '${MQTT_HOST_PORT:-1883}' … five full strings …; done     (no output)
+```
+
+`--services` printed **database first** this run (the first review's run printed broker
+first) — the order instability the revision flags is real on this machine, and the
+name-judging wording is what makes the gate stable.
+
+**Phase 3** (1883/5432 free — `ss -ltn` no listener, exit 1 — plain defaults again)
+
+```
+$ docker compose -f docker/compose.yml up -d                        exit 0
+$ sleep 5
+$ docker compose -f docker/compose.yml ps -q | wc -l                prints 2
+$ docker run --rm --network shuttle-fleet_default eclipse-mosquitto:2.0 \
+    mosquitto_pub -h broker -t acceptance/probe -m ok               exit 0
+  (broker log, same beat: "New client connected … as auto-…")
+$ docker run --rm --network shuttle-fleet_default postgres:17 \
+    pg_isready -h database -U "${SHUTTLE_DB_USER:-shuttle}" \
+    -d "${SHUTTLE_DB_NAME:-shuttle}"                                exit 0
+  (database:5432 - accepting connections)
+$ docker compose -f docker/compose.yml down                         exit 0
+```
+
+**Phase 4** — grep exit 1, prints nothing (judged by output, as the block says).
+
+**Phase 5**
+
+```
+$ T=$(mktemp); docker build -f docker/Dockerfile.build -t shuttle-fleet-build . >"$T" 2>&1
+build exit=0
+$ grep -qF 'FROM mcr.microsoft.com/dotnet/sdk:10.0' docker/Dockerfile.build    exit 0
+$ grep -qF 'dotnet build' docker/Dockerfile.build                              exit 0
+$ docker run --rm shuttle-fleet-build sh -c 'test -f global.json'              exit 0
+$ docker run --rm shuttle-fleet-build sh -c 'find src -name "*.dll" | grep -q .'  exit 0
+$ U=$(mktemp); docker run --rm shuttle-fleet-build >"$U" 2>&1                  exit 0
+$ grep -c 'Passed!' "$U"                                         prints 2
+Passed!  - Failed: 0, Passed: 2, … Contracts.Tests.dll (net10.0)
+Passed!  - Failed: 0, Passed: 1, … FleetManager.Tests.dll (net10.0)
+```
+
+**Phase 6** — three anchored present-greps and the three-word absent-loop: all printed
+nothing. `src/`: `dotnet build` exit 0 (0 warnings, 0 errors), `dotnet test` exit 0,
+`grep -c 'Passed!'` = 2, `grep -c 'No test is available'` = 0.
+
+## Revised acceptance table (re-review)
+
+| # | Criterion (revised lesson wording) | Evidence | Result |
+|---|---|---|---|
+| 1 | Phase 1: five files exist, loop prints nothing | printed nothing | met |
+| 2 | `config` exit 0 | exit 0 | met |
+| 3 | `--services` prints exactly `broker` and `database` (judge names, not order) | two lines, database/broker order this run, exit 0 | met |
+| 4 | `grep -q '^name: shuttle-fleet$'` exit 0 | exit 0 | met |
+| 5 | service loop prints nothing | printed nothing | met |
+| 6 | `eclipse-mosquitto:2.0` pin grep exit 0 | exit 0 | met |
+| 7 | `postgres:17` pin grep exit 0 | exit 0 | met |
+| 8 | `! grep -q ':latest'` exit 0 | exit 0 | met |
+| 9 | `mosquitto.conf` mount grep exit 0 | exit 0 | met |
+| 10 | `config \| grep -c 'host_ip: 127\.0\.0\.1'` prints 2 | printed 2 | met |
+| 11 | `grep -Fq '${'` exit 0 | exit 0 | met |
+| 12 | five **full-string** `${VAR:-default}` loop prints nothing | printed nothing | met |
+| 13 | `up -d` exit 0 | exit 0 | met |
+| 14 | after `sleep 5`, count prints 2 | printed 2; `ps` shows both Up with loopback publishes | met |
+| 15 | `mosquitto_pub` probe exit 0 | exit 0; broker log shows the client connect | met |
+| 16 | `pg_isready` probe exit 0 | exit 0; `accepting connections` | met |
+| 17 | `down` exit 0, nothing left | exit 0; `docker ps -a` only the pre-existing `hello-world` | met |
+| 18 | Phase 4 grep prints nothing | printed nothing (exit 1) | met |
+| 19 | `docker build … >"$T"` exit 0 | exit 0 | met |
+| 20 | `FROM` grep exit 0 | exit 0 | met |
+| 21 | `dotnet build` grep exit 0 | exit 0 | met |
+| 22 | `test -f global.json` in-image probe exit 0 | exit 0 | met |
+| 23 | compiled-DLL in-image probe exit 0 | exit 0 | met |
+| 24 | `docker run --rm shuttle-fleet-build` exit 0 | exit 0 | met |
+| 25 | `grep -c 'Passed!'` prints 2 | printed 2 (2 + 1 tests) | met |
+| 26 | Phase 6: three anchored `.dockerignore` greps print nothing | printed nothing | met |
+| 27 | Phase 6: absent-word loop prints nothing | printed nothing | met |
+| 28 | from `src/`: `dotnet build` / `dotnet test` exit 0 | exit 0 / exit 0, `Passed!` count 2, no `No test is available` | met |
+
+**28 of 28 met.** No criterion failed.
+
+## The two failure-scenario re-runs (against the *new* gates, in a copy)
+
+Copy at `/tmp/opencode/rereview03` (from `git archive HEAD`, deleted after), stack brought
+up per scenario, probes run exactly as the block writes them.
+
+| Scenario | Old gates | New gate that catches it | Measured |
+|---|---|---|---|
+| (a) wrong broker mount (`./mosquitto.conf:/mosquitto/wrong/mosquitto.conf:ro`) — the should-fix 2 case | `config` 0, mount-string grep 0, `up -d` 0, count prints **2** — full pass, and the broker log **still prints** `Opening ipv4 listen socket on port 1883` (so even a log-grep gate would have been fooled) | `mosquitto_pub` from a second container | **exit 1**, `Error: Connection refused` — caught |
+| (b) postgres unreachable (`command: ["postgres", "-c", "listen_addresses="]`) | `config` 0, `up -d` 0, count prints **2**, log prints `database system is ready to accept connections` (twice) | `pg_isready -h database` from a second container | **exit 2**, `database:5432 - no response` — caught |
+
+Both scenarios leave every *old* acceptance line green. The probes are the only gates in
+the block that distinguish "process up" from "service answers" — exactly the hole
+should-fix 2 named, closed.
+
+## Mutation evidence: the revised gates can fail
+
+All against the copy, all with the block's own commands (adapted only in image tag where a
+mutated image would have collided with `shuttle-fleet-build`):
+
+| Mutation | Gate | Result |
+|---|---|---|
+| `RUN dotnet build` line deleted from the Dockerfile | `docker build` | exit **0** (nothing to compile — the professor's claim reproduced), while `grep -qF 'dotnet build'` exits **1** and the DLL probe exits **1**; the `global.json` probe still exits 0, so each probe catches its own fact |
+| `COPY global.json ./` → `COPY global.json /tmp/` | in-image `test -f global.json` | build exit 0, probe exit **1** — the pin-outside-`WORKDIR` break caught |
+| broker port `"127.0.0.1:…"` → `"0.0.0.0:…"` | `config \| grep -c 'host_ip: 127\.0\.0\.1'` | prints **1**, not 2 — caught (and the no-IP variant fails `config` outright, printing 0) |
+| `${MQTT_HOST_PORT:-1883}` → `${MQTT_HOST_PORT}` (no default) | five-full-string override loop | prints `missing override: ${MQTT_HOST_PORT:-1883}` — caught; this is the "name without default passed the old loop" measurement, reconfirmed |
+| `.dockerignore` with `bin/` instead of `**/bin/`; `.github` instead of `.git` | anchored Phase 6 greps | both exit **1** — while the old substring greps (`grep -qF 'bin/'`, `grep -qF '.git'`) exit **0** on the same broken files — the old gates were vacuous, the new ones are not; the honest three-line file passes both anchored forms |
+| prior review's M1b (broken test assertion, record-shaped Dockerfile) | `docker run` + `Passed!` count | already proven in the first review; the verdict still lives at `docker run`, unchanged by this revision |
+
+The honest solution passes every gate (full block run, above); each realistic break I
+constructed fails at least one. No vacuous-pass hole found in the new gates except the one
+minor case below.
+
+## Consistency checks
+
+- **Decision 04 is append-only:** `git diff 12b9b37..HEAD -- docs/decisions/04-…` contains
+  **no deleted lines** — §1–§7 byte-identical; §8's only touch above its own body is the
+  trailing newline that lets text follow the old last line (content unchanged). The §8
+  addendum's account of the old gate is a fair paraphrase (the removed gate grepped the
+  literal `'dotnet test'` as one needle of a `for` list, lesson `12b9b37` line 549); its
+  substance — the honest file fails that gate, the record rejects the shape that passes it
+  — is re-verified above.
+- **Record 04 §3 + §8 vs the Dockerfile:** exactly one `RUN`, and it is `dotnet build`;
+  tests at run time via `CMD`; five lines total, no sixth. Consistent.
+- **Records 02/03 vs `compose.yml`/`mosquitto.conf`:** image tags `eclipse-mosquitto:2.0`
+  and `postgres:17`; `listener 1883` + `allow_anonymous true` (record 02 §4); loopback
+  publishes; `SHUTTLE_DB_*` env wiring with defaults; no named volume (record 03 §4 defers
+  persistence to M3). Unchanged since review 03, still consistent.
+- **Hints vs lesson:** the shared gate lines (both probes, the count, the Dockerfile
+  template) match verbatim, mechanically compared; the hints' Tier-3 Dockerfile template is
+  byte-identical to the owner's file. The hints' Phase 2 peek block is a labelled subset,
+  not a competing gate.
+- **`src/` untouched:** `git diff 84633c6..HEAD -- src/` = 0 lines; no commit in range
+  touches `src/`. Lesson-02's R1 fix still holds (scoped `Hello, World!` grep exits 1).
+- **Hard-coding:** the probes' `shuttle-fleet_default` network name follows from the
+  lesson-fixed `name: shuttle-fleet` (not machine configuration); `acceptance/probe` is
+  check traffic the lesson owns; host ports and DB credentials remain overridable. No
+  violation.
+- **Commit messages (R3 class):** every commit in range carries the `M0:` prefix. See
+  consider A.
+
+## Findings (re-review)
+
+### Blocker
+
+None.
+
+### Should-fix
+
+None. The first review's two are discharged and verified above.
+
+### Consider
+
+**A — commit `78b9a6a`'s message describes one of the five files its diff contains
+(review-02 consider-3 class, new instance).** The message says "Add review documentation…";
+the diff also carries the owner's one-line Dockerfile fix, the professor's lesson and hints
+revision, and the decision-04 addendum. Three actors' changes under one "review
+documentation" message — the prefix is right, the description is not. Not a code defect;
+flagged so the pattern gets named rather than normalized.
+
+**B — the loopback count does not forbid a third publish (lesson vacuity, measured,
+non-blocking).** `config | grep -c 'host_ip: 127\.0\.0\.1'` prints **2** on a compose copy
+where the broker additionally publishes `0.0.0.0:8080:8080` — the gate checks "two
+loopback publishes exist", not "only loopback publishes exist". This owner's file has
+exactly the two fixed publishes (verified above), so nothing blocks; a one-line future
+lesson tweak would close it (e.g. also assert `grep -c 'host_ip'` = 2, or count
+`0\.0\.0\.0` = 0). For the professor.
+
+**C — R2 and R4 stand unchanged** (`StartTests.cs` no timeout; 9-space indent at line 10;
+no trailing newline): `src/` never moved, so no regression — the same considers review 02
+left, still due before M2.
+
+**D — the stretch healthcheck was not attempted** (optional; unchanged).
+
+### Explain-it questions — NON-BLOCKING (review 01 waiver still in force)
+
+Answer out loud before lesson 04:
+
+1. Your probe line says `--network shuttle-fleet_default` and `-h broker`, but your host
+   uses `127.0.0.1`. Where does the name `broker` resolve from, why does the probe container
+   need that flag, and why can't the host just use `broker`?
+2. Your Dockerfile has one `RUN` and one `CMD`. Say exactly what a green `docker build`
+   promises and what a green `docker run` promises — then say which of the two a CI job
+   would need for the suite's verdict, and why record 04 §3 refuses to merge them.
+3. The wrong-mount broker prints `Opening ipv4 listen socket on port 1883` just like the
+   healthy one (I measured both). What fact does `mosquitto_pub` from a second container
+   establish that the log cannot — and what is the `pg_isready` equivalent for postgres?
+4. Record 04 gained an §8 instead of an edit. Say what remains true above §8, why the old
+   gate lost the argument even though it was in the lesson, and what a future record must
+   do before the `RUN`/`CMD` split can change.
+5. Consider B: the loopback count printed 2 while a third port sat on `0.0.0.0`. Say what
+   property the gate checks, what property you wanted, and the one line you would add.
+
+### Blocks to study
+
+- The two probe lines in the lesson and hints — know why each image was chosen (the stack
+  already pulled them; no host tool beyond `docker`).
+- `docker/Dockerfile.build` — six lines; be able to map each to a record 04 §3 bullet and
+  to say which gate fails if you delete it (I measured all six deletions' class above).
+- The anchored `.dockerignore` greps — say what `^\*\*/bin/?$` protects that `bin/` did
+  not, with the measured broken files.
+- `git show 78b9a6a --stat` versus its message — consider A. Write the message it should
+  have had (hint: it is really three commits).
+
+## README
+
+**Changed.** All flip conditions are met — lesson 01 passed; lesson 02's "pass with
+changes" items discharged (R1 re-verified above; R2/R3/R4 were considers, no regression);
+lesson 03 now passes clean; the spec's M0 "done when" (*clean build and tests pass in a
+fresh container*) is proven end to end on the committed tree, including by mutation. The M0
+row moves to `done` and the verification note below it records the exact commands.
+
+## Cleanup
+
+- Every `up` followed by `down`; the repo-context run's leftover postgres anonymous
+  volumes (three, created 19:43:49Z during this session) removed; scratch-stack runs used
+  `down -v`. The 16 anonymous volumes that predate this session (17:03–18:27 and the
+  professor's 19:39 batch) were left untouched.
+- `docker ps -a`: only the pre-existing 9-day-old `hello-world`, left as found.
+- Mutation images `shuttle-fleet-build-mutc` / `-mutd` deleted; the copy at
+  `/tmp/opencode/rereview03` and all scratch files deleted; `dotnet build-server shutdown`
+  run; no `dotnet run`, test host, or MSBuild node left.
+- `git status --porcelain` after this review: only this file and `README.md`.
+
+## What is next
+
+**M0 is closed.** Lesson 04 — M1, the warehouse model and one shuttle — is unblocked. The
+owner carries into M1: R2 (a timeout around the child process in `StartTests.cs`) and R4
+(cosmetic slips there), both small and both named three reviews running; the explain-it
+questions above; and the habit this milestone earned — every gate you meet, run against the
+failing version once, so you know which failure it catches.
