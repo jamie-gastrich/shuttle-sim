@@ -83,7 +83,9 @@ broker/database experiments ran in `/tmp/opencode/lesson03-scratch/`; the toy in
 `/tmp/opencode/lesson03-toy/`. Every container was stopped and every image was deleted
 afterwards (`docker compose down`, `docker rmi`). On this repo I ran read-only `find`,
 `grep`, and `docker` config commands only; no container from these experiments ever
-touched `src/`.
+touched `src/`. After review 03, the revised acceptance gates below were re-verified
+against a throwaway copy of the owner's `docker/` files in `/tmp/opencode/rev03/`
+(deleted afterwards) — the rows marked **(rev.)** come from that re-verification.
 
 | Claim | How I checked | Result |
 |---|---|---|
@@ -91,7 +93,7 @@ touched `src/`.
 | Docker daemon is running | `docker info --format '{{.ServerVersion}}'` | `29.8.1` |
 | No broker/database image was on this machine before this session | `docker images` | only `hello-world`, `mower-sim:m0`, `ros:lyrical-ros-base`, `ubuntu:24.04` |
 | The pinned image tags all exist | `docker manifest inspect` on `eclipse-mosquitto:2.0`, `eclipse-mosquitto:2`, `postgres:17`, `mcr.microsoft.com/dotnet/sdk:10.0` | all exit 0 |
-| A compose file with services `broker` and `database` lists exactly those two | throwaway compose file, `docker compose -f compose.yml config --services` | prints `broker`, `database`, exit 0 |
+| A compose file with services `broker` and `database` lists exactly those two | throwaway compose file, `docker compose -f compose.yml config --services` | prints `broker`, `database`, exit 0 (that one run's order — the order itself proved unstable, see the **(rev.)** row below) |
 | `${VAR:-default}` substitution works in compose service values | throwaway compose file with `ports: "127.0.0.1:${MQTT_HOST_PORT:-1883}:1883"` | `docker compose config` shows the resolved `1883` |
 | An OS environment variable overrides the default without editing the file | `MQTT_HOST_PORT=18830 DB_HOST_PORT=54330 docker compose config` | shows `published: "18830"` and `"54330"`; defaults stay when the vars are absent |
 | Relative paths in a compose file resolve against the compose file's folder | `-f docker/compose.yml` run from a parent directory | bind source resolves to `…/docker/mosquitto.conf` |
@@ -109,6 +111,14 @@ touched `src/`.
 | `.dockerignore` keeps host build output out | dropped `src/Contracts/bin/POISON.txt` on the host, built, checked the image | file absent inside the image; the `bin/` that exists there is the container's own fresh output |
 | Doctor's own sanity check, toy 1: an image runs and exits | `FROM busybox` + `CMD ["echo", "unit 1 ready"]` | `docker run --rm` prints `unit 1 ready`, exit 0 |
 | Doctor's own sanity check, toy 2: a service name is a hostname | two `busybox` services, one pings the other by name | `PING foreman (172.18.0.3): 56 data bytes`, exit 0 |
+| **(rev.)** The old Phase 5 grep contradicted record 04: `grep -qF 'dotnet test'` cannot pass the record's JSON `CMD` | ran the old grep on the record-shaped Dockerfile | exit **1** — the honest file failed its own gate (the R1 defect this revision removes) |
+| **(rev.)** The Phase 5 image probes fail a Dockerfile that never compiles at build time | mutated Dockerfile with the `RUN dotnet build` line deleted → `docker build` | build exit **0**, but the `dotnet build` grep and `sh -c 'find src -name "*.dll" \| grep -q .'` both exit **1** |
+| **(rev.)** The Phase 5 pin probe fails when `global.json` lands outside the `WORKDIR` | mutated Dockerfile `COPY global.json /tmp/` → build | build exit **0** (compiles anyway), in-image `test -f global.json` exit **1** |
+| **(rev.)** The Phase 3 broker probe catches an "Up" broker the count gate cannot | compose copy with `./mosquitto.conf` mounted at `/mosquitto/wrong/mosquitto.conf` | count prints **2** (old gates all pass), broker log *still* says `Opening ipv4 listen socket on port 1883`, but `mosquitto_pub` from a second container exits **1**, `Error: Connection refused` |
+| **(rev.)** The Phase 3 database probe catches an "Up" database that answers no client | compose copy with `command: ["postgres", "-c", "listen_addresses="]` | count prints **2** and the log says `database system is ready to accept connections`, but `pg_isready -h database` from a second container exits **2**, `no response` |
+| **(rev.)** The probes need no host tool beyond `docker` | both probes are `docker run --network shuttle-fleet_default …` using the two pinned images the stack already pulled | both exit **0** on the honest stack (full revised block re-run end to end: every gate green) |
+| **(rev.)** `config --services` line order is not stable | 8 consecutive runs on the same unchanged file | 4× `broker, database`, 4× `database, broker` — judge the two names, never the order |
+| **(rev.)** The `.dockerignore` patterns behave as the gate now checks them | four builds of a scratch context (`.git/`+`**/bin/`; `.git`+`**/bin`; root-only `bin/`; `.github`) | both slash forms exclude correctly; root-only `bin/` still ships `src/Contracts/bin/`, `.github` still ships `.git` — and both broken forms passed the old substring greps |
 
 Not yet verified:
 
@@ -274,7 +284,9 @@ Honest note about `up -d` (measured, twice): `up -d`'s exit code means "compose 
 containers off", not "the services are ready". The misconfigured postgres exited after
 `up -d` reported 0 — the container quietly died, and a count of *running* containers
 caught it. **"Started" and "ready" are different facts.** That is exactly why the
-acceptance below counts running containers after a settle beat instead of trusting the
+acceptance below counts running containers after a settle beat — and then, because a
+running container is still not proof of a *reachable* service, puts a real client in a
+second container and makes it talk to each service by name — instead of trusting the
 command's exit code.
 
 ### Configuration, not hard-coded wiring
@@ -418,7 +430,10 @@ Answer these without notes, the way you would in an interview:
    `src/`, and the syntax that lets a port have a default and an override at once.
 4. `docker compose up -d` exits 0, and five minutes later the dashboard is empty.
    Explain what "0" actually meant, using what I measured with the password-less
-   postgres. What does the acceptance block count instead, and why is that better?
+   postgres. What does the acceptance block count instead, and why is that better? Then
+   say what the block's two client probes catch that the count cannot, and why grepping
+   the broker's log would not substitute for them (measured both ways — the local-only
+   broker prints the listen line too).
 5. Two decision records shipped this week. Which one lets M2's lesson start from a decided
    broker, and what did it defer on purpose?
 
@@ -459,7 +474,10 @@ explain every line.
    `WORKDIR`; `COPY global.json ./` and `COPY src/ ./src/` (the pin must be in the
    container before anything builds); a `RUN` that builds the solution; and `dotnet test`
    as the image's **default command** (`CMD`), so the suite's verdict is the image's exit
-   code. Walk yourself through each line the night before review.
+   code — and nothing more than those five. Record 04 §3 rejects a second
+   `RUN dotnet test` layer ("not a second `RUN` layer"): `docker build` answers *does it
+   compile*, `docker run` answers *do all tests pass*, and each exit code keeps its own
+   meaning. Walk yourself through each line the night before review.
 4. **`.dockerignore`**, at the repository root (the build context is the root). It keeps
    out `.git` and host build output (`**/bin/`, `**/obj/`). It must **not** exclude
    `src/`, `docs/`, or `global.json` — the container needs all three (lesson 02's stretch
@@ -478,8 +496,10 @@ records. This assignment runs the *infrastructure* and proves the *build*.
 
 ### Acceptance criteria (all command-checkable)
 
-From the repository root. Read every exit code directly, never through a pipe. Judge the
-`grep` commands by output where noted, exactly as lesson 02 taught.
+From the repository root. Read every exit code directly, never through a pipe — the one
+exception is the lesson's own counting convention (`| wc -l`, `| grep -c …`), where the
+*printed number* is the thing you judge. Judge the `grep` commands by output where noted,
+exactly as lesson 02 taught.
 
 ```bash
 # Phase 1 — the five files exist; the loop prints nothing
@@ -491,7 +511,7 @@ done
 ```bash
 # Phase 2 — the compose file parses and declares the decided stack
 docker compose -f docker/compose.yml config >/dev/null        # exit 0 — it parses
-docker compose -f docker/compose.yml config --services        # prints exactly two lines: broker, database
+docker compose -f docker/compose.yml config --services        # prints exactly two lines: broker and database (judge by names — the order is not stable)
 grep -q '^name: shuttle-fleet$' docker/compose.yml            # exit 0
 for s in broker database; do
   grep -qE "^[[:space:]]*$s:" docker/compose.yml || echo "no service: $s"   # prints nothing
@@ -500,27 +520,41 @@ grep -q 'image: eclipse-mosquitto:2.0' docker/compose.yml     # exit 0 — pinne
 grep -q 'image: postgres:17' docker/compose.yml               # exit 0
 ! grep -q ':latest' docker/compose.yml                        # exit 0 — no un-pinned tag anywhere
 grep -q 'mosquitto.conf' docker/compose.yml                   # exit 0 — the config is mounted
-grep -q '127.0.0.1' docker/compose.yml                        # exit 0 — host loopback only
+docker compose -f docker/compose.yml config | grep -c 'host_ip: 127\.0\.0\.1'   # prints 2 (judge by output): both publishes are loopback-only
 grep -Fq '${' docker/compose.yml                              # exit 0 — something is overridable
-for v in MQTT_HOST_PORT DB_HOST_PORT SHUTTLE_DB_USER SHUTTLE_DB_PASSWORD SHUTTLE_DB_NAME; do
-  grep -q "\${$v" docker/compose.yml || echo "missing var: $v"    # prints nothing
+for v in '${MQTT_HOST_PORT:-1883}' '${DB_HOST_PORT:-5432}' '${SHUTTLE_DB_USER:-shuttle}' \
+         '${SHUTTLE_DB_PASSWORD:-shuttle}' '${SHUTTLE_DB_NAME:-shuttle}'; do
+  grep -qF "$v" docker/compose.yml || echo "missing override: $v"    # prints nothing
 done
 ```
 
 With `docker/` empty the `config` command fails — nothing to parse — and every file grep in
 phases 1–2 exits 1. On a correct file they all exit 0; read `--services`'s two lines by
-name.
+name — measured, the *order* of those two lines is not stable (8 runs on one unchanged
+file: 4× `broker` first, 4× `database` first), so judge the set of names, never their
+order. The loopback line counts `host_ip: 127.0.0.1` in the *resolved* configuration
+rather than grepping the source, because that is the only form that fails when one of the
+two services forgets the loopback (a source grep still passes when the other service's
+line carries it), and source comments cannot pad the count. The override loop greps the
+five complete `${VAR:-default}` strings requirement 1 fixes, not just the variable names:
+a name without its default is a different file — measured, a compose file with
+`${MQTT_HOST_PORT}` and no default passed the old variable-name loop without a word.
 
 ```bash
-# Phase 3 — the stack runs, stays up, and stops cleanly
+# Phase 3 — the stack runs, stays up, is reachable by a real client, and stops cleanly
 docker compose -f docker/compose.yml up -d                    # exit 0 — but read the note below
 sleep 5                                                       # "started" and "ready" are different facts
 docker compose -f docker/compose.yml ps                       # eyeball: both containers Up
 docker compose -f docker/compose.yml ps -q | wc -l            # prints 2 (judge by output)
+docker run --rm --network shuttle-fleet_default eclipse-mosquitto:2.0 \
+  mosquitto_pub -h broker -t acceptance/probe -m ok           # exit 0 — a client in a second container reached broker by name
+docker run --rm --network shuttle-fleet_default postgres:17 \
+  pg_isready -h database -U "${SHUTTLE_DB_USER:-shuttle}" \
+  -d "${SHUTTLE_DB_NAME:-shuttle}"                            # exit 0 — a client in a second container reached database by name
 docker compose -f docker/compose.yml down                     # exit 0 — nothing left running
 ```
 
-Two things about that block. First, the `sleep 5` is a check convention, not product
+Three things about that block. First, the `sleep 5` is a check convention, not product
 configuration: it is how the check stops being a race. Measured with the password-less
 postgres: `up -d` exited **0**, and within seconds the container had exited — `ps -q |
 wc -l` printed 1, and a compose `exec` failed with `service "database" is not running`.
@@ -530,6 +564,24 @@ probable causes are a real config mistake (like that password) or a busy host po
 override variables (`MQTT_HOST_PORT`, `DB_HOST_PORT`) exist for exactly the second cause.
 Verify with `docker compose -f docker/compose.yml logs database` and
 `… logs broker`, and explain what you see.
+
+Third — the reason the two client lines exist: a count of running containers says
+*process*, not *service*. Measured (revised gates): with the broker's config mounted at
+the wrong path, both containers are Up, the count prints 2, and every Phase 2 grep still
+passes — but the broker is local-only and `mosquitto_pub` from a second container exits
+**1** with `Error: Connection refused`. Do not be tempted to swap the probe for a log
+grep: measured, the local-only broker *also* prints
+`Opening ipv4 listen socket on port 1883`, so the reassuring line is there whether or
+not another container can connect — the client is what tells you the difference. The
+database has the same class of trap, caught the same way: a postgres started with
+`listen_addresses=` is Up and logs `database system is ready to accept connections`, and
+`pg_isready -h database` still exits **2** (`no response`). Two details worth reading
+once: both probes are plain `docker run --network shuttle-fleet_default …` — no host
+tool beyond `docker`, and the network name is the one the fixed project name `shuttle-fleet`
+produces (measured in the lecture) — and the probe runs *outside* the service's own
+container, because a client inside the broker would reach even a local-only broker's
+loopback. The topic `acceptance/probe` is check traffic, not a fleet message: M2's records
+own the real ones.
 
 ```bash
 # Phase 4 — no service address or port has leaked into code; prints nothing
@@ -544,41 +596,58 @@ configuration — never from a `grep`-able literal.
 ```bash
 # Phase 5 — the fresh-container build: compile clean, then suite green, both inside the image
 T=$(mktemp)
-docker build -f docker/Dockerfile.build -t shuttle-fleet-build . >"$T" 2>&1   # read $? here: exit 0
+docker build -f docker/Dockerfile.build -t shuttle-fleet-build . >"$T" 2>&1   # read $? here: exit 0 — a failing compile fails the build
 rm -f "$T"
-for f in 'FROM mcr.microsoft.com/dotnet/sdk:10.0' 'dotnet build' 'dotnet test' 'global.json'; do
-  grep -qF "$f" docker/Dockerfile.build || echo "Dockerfile missing: $f"       # prints nothing
-done
+grep -qF 'FROM mcr.microsoft.com/dotnet/sdk:10.0' docker/Dockerfile.build    # exit 0 — the pinned base (record 01)
+grep -qF 'dotnet build' docker/Dockerfile.build                              # exit 0 — the RUN build layer exists (record 04)
+docker run --rm shuttle-fleet-build sh -c 'test -f global.json'              # exit 0 — the pin sits at the WORKDIR, where the build reads it
+docker run --rm shuttle-fleet-build sh -c 'find src -name "*.dll" | grep -q .'   # exit 0 — the image ships compiled output: the build ran at image-build time
 U=$(mktemp)
-docker run --rm shuttle-fleet-build >"$U" 2>&1                    # read $? here: exit 0
+docker run --rm shuttle-fleet-build >"$U" 2>&1                    # read $? here: exit 0 — the default command is the suite; its exit code is the verdict
 grep -c 'Passed!' "$U"                                             # prints 2 — one line per test project
 rm -f "$U"
 ```
 
 Honest timing note: the *first* `docker build` downloads the `.NET` SDK base image
-(several hundred MB), and `docker run` then re-uses it — slow once, cached after. The
-four `grep`s check the facts that keep the build fresh: the pinned base (record 01), the
-build-then-test split (record 04), and the copied `global.json` without which the
-container could silently build against a different SDK. The `grep -c 'Passed!'` prints 2
-only when **both** test projects actually ran — the same "a DLL with no tests still
-exits 0" trap lesson 02 measured.
+(several hundred MB), and `docker run` then re-uses it — slow once, cached after.
+
+Why this shape, in three sentences you should be able to repeat. **The two greps check the
+recipe's fixed facts**: the pinned base (record 01) and the `RUN` that compiles (record
+04) — and nothing greps for the literal words `dotnet test`, because record 04 §3's `CMD
+["dotnet", "test", …]` does not contain that substring while the second `RUN` layer that
+would contain it is the exact shape §3 rejects (an earlier version of this gate grepped
+for it and could only be passed by violating the record — measured: that grep exits 1 on
+the honest file). **The two container probes check the image's behaviour instead of its
+spelling**: `global.json` at the `WORKDIR`, without which the container could silently
+build against a different SDK, and compiled `.dll` output, which only a `RUN` build layer
+can have put there — `.dockerignore` keeps the host's `bin/` out, so nothing else could.
+Measured: delete the `RUN` line and `docker build` still exits 0 (nothing to compile!),
+while the `dotnet build` grep and the DLL probe both exit 1. **The run and the count keep the suite's verdict where record 04
+put it**: `docker run`'s exit code is the suite's, and `grep -c 'Passed!'` prints 2 only
+when **both** test projects actually ran — the same "a DLL with no tests still exits 0"
+trap lesson 02 measured.
 
 ```bash
-# Phase 6 — the .dockerignore promises: three lines present, three words absent
-for pat in '.git' 'bin/' 'obj/'; do
-  grep -qF "$pat" .dockerignore || echo "dockerignore missing: $pat"          # prints nothing
-done
+# Phase 6 — the .dockerignore promises: three exact lines present, three words absent
+grep -qE '^\.git/?$' .dockerignore || echo "dockerignore missing: .git"       # prints nothing
+grep -qE '^\*\*/bin/?$' .dockerignore || echo "dockerignore missing: **/bin/" # prints nothing
+grep -qE '^\*\*/obj/?$' .dockerignore || echo "dockerignore missing: **/obj/" # prints nothing
 for pat in 'global.json' 'docs/' 'src/'; do
   if grep -qF "$pat" .dockerignore; then echo "dockerignore wrongly excludes: $pat"; fi
 done                                                                          # prints nothing
 ```
 
-The first loop names the promises (keep the history and the host's build output out of
-every context); the second loop names the non-promises the earlier lesson made — the
-container still needs `global.json`, `src/`, and `docs/`. And a teaser: a `.dockerignore`
-line like `docs/` is exactly the kind of "passes on my machine, fails reviewed elsewhere"
-trap this gate exists to catch — lesson 02's stretch test reads the contract page from
-the build output, so the mistake would hide *inside the container only*.
+The first three lines name the promises, anchored to the whole line rather than a
+substring — measured, this is the difference between checking the promise and checking a
+spelling: a file with `bin/` instead of `**/bin/` kept `src/Contracts/bin/` in the image
+(the build output the promise exists to stop), and a file with `.github` instead of
+`.git` shipped the whole history — and the old substring greps passed both broken files.
+Both slash forms are accepted (`.git` or `.git/`), also measured: dockerignore treats them
+the same. The final loop names the non-promises the earlier lesson made — the container
+still needs `global.json`, `src/`, and `docs/`. And a teaser: a `.dockerignore` line like
+`docs/` is exactly the kind of "passes on my machine, fails reviewed elsewhere" trap this
+gate exists to catch — lesson 02's stretch test reads the contract page from the build
+output, so the mistake would hide *inside the container only*.
 
 From `src/`, the old gates must still hold — nothing in this lesson may touch them:
 

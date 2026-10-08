@@ -95,3 +95,51 @@ Not yet verified:
 - Lesson 03's assignment can hand the owner a Dockerfile *shape* with every fact that matters pinned (base image, copies, run-vs-run-command split, ignore file) — while leaving the file itself to the owner.
 - Reviewer acceptance for the fresh build is a one-liner pair with honest exit codes.
 - Record 01, section 12's "the Dockerfile itself is M0 work" promise now has its shape logged.
+
+---
+
+## 8. Addendum (2026-10-08): the acceptance gate is corrected to match this record
+
+Written after [review 03](../reviews/03-docker-services.md), should-fix 1. Nothing above
+is changed; this section records how a lesson gate and this record disagreed, and which
+side won.
+
+**The conflict.** Lesson 03's Phase 5 acceptance contained
+`grep -qF 'dotnet test' docker/Dockerfile.build`. That grep can only pass a file holding
+the literal substring `dotnet test`. This record's shape — section 3's
+`CMD ["dotnet", "test", …]` — does not contain it (there is a `", "` between the two
+words), while a second `RUN dotnet test` layer, which *does* contain it, is exactly the
+layer section 3 rejects (*"not a second `RUN` layer … Baking the test run into the image
+would bury the suite's verdict in cache internals"*). So the honest file failed the gate
+and the only file that satisfied both the gate and the record's rejection was impossible:
+the gate forced the rejected shape. Review 02's R1 class — a gate the honest solution
+cannot pass — recurring in lesson 03.
+
+**Ruling: section 3 stands, the gate was wrong.** The revised Phase 5 checks behaviour,
+not spelling:
+
+1. `docker build … >"$T"` exit 0 — a failing compile fails the build (the `RUN`'s job).
+2. `grep -qF 'FROM mcr.microsoft.com/dotnet/sdk:10.0'` and `grep -qF 'dotnet build'` —
+   the recipe's fixed facts (sections 3 and record 01, section 12).
+3. `docker run --rm shuttle-fleet-build sh -c 'test -f global.json'` exit 0 — the pin is
+   inside the image at the `WORKDIR`, where the build actually reads it.
+4. `docker run --rm shuttle-fleet-build sh -c 'find src -name "*.dll" | grep -q .'`
+   exit 0 — the image ships compiled output, which only a `RUN` build layer can have
+   produced (`.dockerignore` keeps the host's `bin/` out).
+5. `docker run --rm shuttle-fleet-build` exit 0 and `grep -c 'Passed!'` = 2 — the suite's
+   verdict lives at `docker run`, as section 3 designed.
+
+No acceptance line greps for the literal `dotnet test` any more. Reasons: (a) section 3's
+argument is unchanged, and review 03's mutation M1b already proved this shape fails loudly
+when a test breaks — the split needs no new defence; (b) AGENTS.md makes records binding,
+and a gate that forces a rejected shape is a lesson defect, not a licence to amend the
+record; (c) lesson 02's R1 lesson — test the property, not the spelling.
+
+**Owner-side consequence:** `docker/Dockerfile.build` keeps exactly section 3's shape —
+five lines, **no `RUN dotnet test` layer** (review 03 should-fix 1: the fix is "delete
+line 6", nothing else).
+
+**What would change this addendum:** only a later record that replaces section 3's split
+(a runtime image, CI, or multi-stage build — section 6's list). Such a record links to
+section 3 as originally written and to this addendum. Records remain append-only; no line
+above was edited to write this.

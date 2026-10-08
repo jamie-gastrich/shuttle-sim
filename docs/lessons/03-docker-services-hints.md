@@ -11,9 +11,10 @@ Open a tier only when you are stuck. Stop reading as soon as the tier gets you m
   `.dockerignore` (what the build must not see), and `docker/README.md` (how a stranger
   uses it). Ask which one is missing before you touch a terminal.
 - `docker compose up -d` prints success even when a service crash-loops. The acceptance
-  block therefore **counts running containers after a five-second settle**, not the
-  command's exit code. If the count prints 1, read `docker compose -f docker/compose.yml
-  logs database` and `… logs broker` and explain what you see.
+  block therefore **counts running containers after a five-second settle** and then
+  **probes each service with a real client in a second container** — a green count is a
+  process, a green probe is a service. If the count prints 1, read `docker compose -f
+  docker/compose.yml logs database` and `… logs broker` and explain what you see.
 - Mosquitto 2 does not listen for remote clients until you say so. Its default is
   local-only; the config file's `listener 1883` line is what makes the container reachable
   by other containers at all. The lesson's verification table has the exact log line.
@@ -45,9 +46,11 @@ Open a tier only when you are stuck. Stop reading as soon as the tier gets you m
   5. `docker/README.md` last — it documents the commands you just ran.
   6. Run the acceptance block, one phase at a time, reading every exit code directly.
 
-- The compose file is read top-down too. **Declare `broker` before `database`** — the
-  acceptance's `config --services` line prints names in declaration order, and a reviewer
-  reads the broker as service number one because it is the one M2 actually wires.
+- The compose file is read top-down too. **Declare `broker` before `database`** — a
+  reviewer reads the file top-down, and the broker is the one M2 actually wires, so it
+  belongs as service number one. (Not because `config --services` prints them in that
+  order: measured, that output order is not stable — the acceptance judges the two
+  names, never their order.)
 - `docker compose -f docker/compose.yml` is not `docker compose` — the `-f` names the
   file, relative to where you are standing, so **run it from the repository root**. The
   file's *internal* paths, like `./mosquitto.conf`, then resolve against the compose
@@ -64,8 +67,9 @@ Open a tier only when you are stuck. Stop reading as soon as the tier gets you m
   container only*. The homework mimics the reviewer: build from a clean context, then run
   the suite, then wonder whether you and the container saw the same files.
 - The `RUN` and the `CMD` in the Dockerfile do two different jobs. `RUN` answers "does it
-  compile", `CMD` answers "do all tests pass". Mixing them is not the only way — it is the
-  way the record chose, and you should be able to say why before the review.
+  compile", `CMD` answers "do all tests pass". Record 04 §3 chose that split *and*
+  rejected the other shape — a second `RUN dotnet test` layer, "not a second `RUN`
+  layer". Five lines, no more; you should be able to say why before the review.
 
 ---
 
@@ -74,12 +78,14 @@ Open a tier only when you are stuck. Stop reading as soon as the tier gets you m
 Copy-paste shapes. Every block below is a **template**: the shape and the fixed facts come
 from the assignment, the typing is not done for you — type every line yourself. Your words
 are still yours: the comments, the README's prose, and `WORKDIR`'s directory name. Every
-gate string the acceptance greps (the two `image:` lines, `name: shuttle-fleet`, the
-`FROM` line, `dotnet build`, `dotnet test`, `global.json`, the `SHUTTLE_DB_*` and
-`MQTT_HOST_PORT`/`DB_HOST_PORT` names) appears verbatim in the blocks below, and each
-behaviour behind those strings was measured in scratch files on 2026-10-08: `docker compose
-config` resolved them, `up`/`down` ran the broker and the database, and the image built
-and ran the suite. A failure on your side is a typing slip, not my syntax.
+string the acceptance greps for (the two `image:` lines, `name: shuttle-fleet`, the
+`FROM` line, `dotnet build`, the five `${VAR:-default}` overrides, the three `.dockerignore`
+lines) appears verbatim in the blocks below; the acceptance's other checks are behavioural
+(what the image contains, whether a client can reach a service, whether the suite prints
+two `Passed!` lines), and every one of those behaviours was measured on 2026-10-08: `docker
+compose config` resolved the values, `up`/`down` ran the broker and the database, client
+containers reached both, and the image built and ran the suite. A failure on your side is
+a typing slip, not my syntax.
 
 ### `docker/mosquitto.conf`
 
@@ -114,12 +120,11 @@ services:
       POSTGRES_DB: ${SHUTTLE_DB_NAME:-shuttle}
 ```
 
-Measured on this shape: `docker compose config --services` prints `broker` then
-`database`; `MQTT_HOST_PORT=18830 docker compose config` resolves the publish to 18830;
-`docker compose up -d` brings both up and the count of running containers is 2; the
-database comes up green with those defaults; the `:ro` mount produces the broker's
-harmless `chown: …: Read-only file system` warning at start — cosmetic, and worth saying
-out loud so it does not read as a failure.
+Measured on this shape: `MQTT_HOST_PORT=18830 docker compose config` resolves the publish
+to 18830; `docker compose up -d` brings both up, the count of running containers is 2, and
+both client probes exit 0; the database comes up green with those defaults; the `:ro`
+mount produces the broker's harmless `chown: …: Read-only file system` warning at start —
+cosmetic, and worth saying out loud so it does not read as a failure.
 
 ### `.dockerignore`
 
@@ -132,7 +137,9 @@ out loud so it does not read as a failure.
 That is all it removes. `src/`, `docs/`, and `global.json` must stay eligible — the build
 compiles `src/`, lesson 02's stretch test reads `docs/contract/v1.md` from inside `bin/`,
 and `global.json` is what makes the container build against the pinned SDK. The acceptance
-greps for all six words (three present, three absent).
+checks the three lines above are present, each anchored to the whole line (a substring
+like `bin/` would pass while the promise stays broken — measured), and that `global.json`,
+`docs/`, and `src/` stay absent.
 
 ### `docker/Dockerfile.build`
 
@@ -170,21 +177,31 @@ block says so.
 ```bash
 # Phase 2 resolved — you should see these other numbers
 docker compose -f docker/compose.yml config --services   # broker
-                                                        # database
-docker compose -f docker/compose.yml config | grep -E 'published|target' | head -6
+                                                        # database (in either order)
+docker compose -f docker/compose.yml config | grep -E 'host_ip|published|target' | head -8
 ```
 
 The second command is a peek, not a gate: it shows the ports as compose will actually
-publish them — `127.0.0.1:1883` and `127.0.0.1:5432` when the shell vars are unset
-(measured).
+publish them — `host_ip: 127.0.0.1` with `published: "1883"` and `published: "5432"` when
+the shell vars are unset (measured; one of the `target` lines is the config mount, not a
+port).
 
 ```bash
 # Phase 3 — the "started vs ready" moment in one line each
 docker compose -f docker/compose.yml up -d        # exit 0
 sleep 5
 docker compose -f docker/compose.yml ps -q | wc -l   # prints 2
+docker run --rm --network shuttle-fleet_default eclipse-mosquitto:2.0 \
+  mosquitto_pub -h broker -t acceptance/probe -m ok   # exit 0
+docker run --rm --network shuttle-fleet_default postgres:17 \
+  pg_isready -h database -U "${SHUTTLE_DB_USER:-shuttle}" \
+  -d "${SHUTTLE_DB_NAME:-shuttle}"                    # exit 0
 docker compose -f docker/compose.yml down             # exit 0, nothing left
 ```
+
+The two probes are client containers on the stack's own network — no host tool beyond
+`docker`, and the network name follows from the fixed `name: shuttle-fleet`. A count of 2
+says both processes run; a green probe says both services answer.
 
 ```bash
 # Phase 5 measured, for the record: fresh-context build, then the suite inside it
@@ -199,9 +216,11 @@ base image; it is slow once and cached after.
 ---
 
 What is deliberately *not* given here: the wording of your comments and README, the name
-of your `WORKDIR`, and the exact layout you choose inside the blocks. The fixed facts are
-the gate strings — `name: shuttle-fleet`, the two pinned tags, the five variable names,
-the `FROM` line, `dotnet build`, `dotnet test`, `global.json`. Type every line yourself,
-be able to explain every line of your version out loud, and keep the review's first
-question in mind: *every port in this file has a default and an override — say where each
-one comes from.*
+of your `WORKDIR`, and the exact layout you choose inside the blocks. The fixed facts the
+acceptance greps for — `name: shuttle-fleet`, the two pinned tags, the five
+`${VAR:-default}` overrides, the `FROM` line, `dotnet build`, the three `.dockerignore`
+lines — plus the behaviours it *probes* (compiled output inside the image, `global.json`
+at the `WORKDIR`, a client reaching each service, two `Passed!` lines). Type every line
+yourself, be able to explain every line of your version out loud, and keep the review's
+first question in mind: *every port in this file has a default and an override — say
+where each one comes from.*
