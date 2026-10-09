@@ -851,3 +851,264 @@ lines.
    transition is still uncovered.
 4. **R2/R4** (C3) remain due before the M2 lesson; the reference pattern is `DemoTests.cs`.
 5. Re-submit; I will re-run the full block, the anchored name walk, and both mutations.
+
+---
+
+# Re-review (second) — 2026-10-09: both fixes verified, M1 closes
+
+**Appended** on 2026-10-09. Every line above this one stands as written; nothing above was edited.
+This is the second re-review of lesson 04 / M1. It records the owner's fix at `cb895a5` and the
+outcome.
+
+**Re-verified at:** commit `cb895a5` (`M1: Fix rejection test for unloading into occupied slot and
+update fault handling in state transition tests`), on top of `673bede`, branch `master`,
+`git status --porcelain` empty (exit 0) before I started. The range moves exactly three files —
+
+```
+$ git diff 673bede..cb895a5 --stat
+ docs/reviews/04-warehouse-model-and-one-shuttle.md | 322 ++++++++++++++-
+ src/ShuttleCore.Tests/RejectionTests.cs            |   5 +-
+ src/ShuttleCore.Tests/StateTransitionTests.cs      |   2 +-
+```
+
+and **the design code did not move**: `git diff 673bede..cb895a5 -- src/ShuttleCore` prints
+nothing (0 lines), so every mutation proof written in the two sections above still stands. The two
+source edits are exactly the fixes the last re-review asked for:
+
+- `StateTransitionTests.cs:136` — `RaiseFault(reason, Start)` → `RaiseFault(reason, Start.Add(Timing.Load))`.
+- `RejectionTests.cs` — the `//IDK about this one` comment and the trailing blank line are gone,
+  `rack.Place("A01-L01-S02", "PLT-002")` is added, and the final call becomes
+  `StartUnload("A01-L01-S02", Start.Add(Timing.Load))` — a genuinely occupied slot at a legal
+  (non-decreasing) timestamp.
+
+**Verdict change: `not yet` → `pass`. M1 closes.** Both prior findings are cleared and
+mutation-proven, the suite is green host and container, and record 06's state×event table is
+covered 10/10.
+
+## Commands re-run, verbatim key output
+
+Run against this committed tree, from the directories the block names, exit codes read directly
+(the block's `mktemp` capture pattern where output is captured). The block is lesson 04 lines
+586–743.
+
+### Phases 1–3 — clean, no regression
+
+Phase 1: four project files present (loop silent); `grep -c '<Project Path'` prints **8**;
+`ProjectReference … | wc -l` prints **10**; `ShuttleCore.csproj` references nothing (exit 1);
+`ShuttleSim` is `Exe` (exit 0); `ShuttleCore` is not (exit 1); `ShuttleSim` never names
+`FleetManager` (exit 1); all six `ref` edges present (loop silent); the md5 duplicate check prints
+nothing. Phase 2: enum, five wire names, seven events, and the four types all grep exit 0, no
+`missing` line. Phase 3: the sleep grep and the `ShuttleCore` duration-literal grep both print
+nothing (exit 1); the network-vocabulary grep prints nothing (exit 1); no `Class1.cs`/`UnitTest1.cs`;
+`Test1` exit 1; the scoped `Hello, World!` grep exit 1; every `[Fact]` file contains an `Assert`.
+The extra purity grep over `ShuttleCore` (`Sleep|Console|Stopwatch|DateTime.Now|Task.Delay|Process|
+Socket|HttpClient|Task.Run`) prints nothing (exit 1).
+
+### Phase 4 — build green, suite GREEN
+
+```
+$ dotnet build                                      exit 0, 0 Warning(s), 0 Error(s)
+$ T=$(mktemp); dotnet test > "$T" 2>&1              exit 0   <-- reference: 0
+$ grep -c 'Passed!' "$T"                            prints 4  <-- reference: 4
+$ grep -c 'No test is available' "$T"               prints 0
+
+Passed! - Failed: 0, Passed: 22, … ShuttleCore.Tests.dll (net10.0)
+Passed! - Failed: 0, Passed:  2, … Contracts.Tests.dll   (net10.0)
+Passed! - Failed: 0, Passed:  1, … ShuttleSim.Tests.dll  (net10.0)
+Passed! - Failed: 0, Passed:  1, … FleetManager.Tests.dll (net10.0)
+```
+
+The anchored name walk (`grep -qE "\.$t\$"`, all 23 names) **prints nothing** — all 23 present.
+`Assert.Equal(ShuttleState.` count = **11** (≥10); `Assert.Throws<ShuttleRejectedException>` count
+= **6** (≥6).
+
+### Phase 5 — the demo is unchanged and exactly right
+
+`dotnet run --project ShuttleSim/ShuttleSim.csproj` exit 0; `grep -c '"ShuttleId"'` prints **7**;
+all four states present; `2026-01-01T00:00:17Z` and `…19Z` present; both positions present; line 4
+is `"State":"moving"` with `"Position":"A01-L01"`; `"FaultReason":null` present; all scenario-id,
+`JsonSerializer`, and `ShuttleStatus` greps satisfied. Output byte-identical to lines 118–124 above.
+
+### Phase 6 — contract untouched; fresh container GREEN
+
+All contract greps exit 0; `git diff 11f82d1..HEAD -- docs/contract/ src/Contracts/` is empty.
+
+```
+$ docker build -f docker/Dockerfile.build -t shuttle-fleet-build .   exit 0
+$ U=$(mktemp); docker run --rm shuttle-fleet-build > "$U" 2>&1       exit 0   <-- reference: 0
+$ grep -c 'Passed!' "$U"                                             prints 4
+Passed! - … Passed: 22 … ShuttleCore.Tests.dll (net10.0)
+```
+
+No compose service was needed or started; the only `docker` actions were this `build` and a `--rm`
+`run`.
+
+## Acceptance table (second re-review)
+
+Same 32 criteria as the first review, re-judged on this tree.
+
+| # | Phase / criterion (lesson wording) | Evidence | Result |
+|---|---|---|---|
+| 1 | Phase 1: four `.csproj`s exist, loop prints nothing | printed nothing | met |
+| 2 | `grep -c '<Project Path'` prints 8 | printed 8 | met |
+| 3 | `ProjectReference … \| wc -l` prints 10 | printed 10 | met |
+| 4 | `ShuttleCore.csproj` references nothing | exit 1 | met |
+| 5 | `ShuttleSim` is `OutputType Exe` | exit 0 | met |
+| 6 | `ShuttleCore` is not `Exe` | exit 1 | met |
+| 7 | `ShuttleSim` never references `FleetManager` | exit 1 | met |
+| 8 | all six new edges present | no `missing edge:` | met |
+| 9 | no `.cs` duplicated (md5) | prints nothing | met |
+| 10 | Phase 2: enum, wire names, events, types greppable | all exit 0 | met |
+| 11 | Phase 3: no `Thread.Sleep`/`Task.Delay` in `src/` | nothing (exit 1) | met |
+| 12 | Phase 3: no duration literal in `ShuttleCore` | nothing (exit 1) | met |
+| 13 | Phase 3: no network vocabulary in `src/` | nothing (exit 1) | met |
+| 14 | Phase 3: no placeholders / `Test1` / template string | nothing | met |
+| 15 | Phase 3: every `[Fact]` file has an `Assert` | nothing | met |
+| 16 | Phase 4: `dotnet build` exit 0 | exit 0, 0/0 | met |
+| 17 | Phase 4: `dotnet test` exit 0 | **exit 0** (was 1) | **met** |
+| 18 | Phase 4: `grep -c 'Passed!'` prints 4 | **prints 4** (was 3) | **met** |
+| 19 | Phase 4: `grep -c 'No test is available'` prints 0 | printed 0 | met |
+| 20 | Phase 4: anchored name walk — all 23 names | prints nothing | met |
+| 21 | Phase 4: `Assert.Equal(ShuttleState.` ≥ 10 | 11 | met |
+| 22 | Phase 4: `Assert.Throws<…RejectedException>` ≥ 6 | 6 | met |
+| 23 | Phase 5: demo exit 0, 7 `"ShuttleId"` lines | exit 0, 7 | met |
+| 24 | Phase 5: `idle loading moving unloading` all shown | all present | met |
+| 25 | Phase 5: `00:00:17Z` and `00:00:19Z` | both present | met |
+| 26 | Phase 5: positions; line 4 = moving **and** `A01-L01` | correct | met |
+| 27 | Phase 5: `"FaultReason":null` | present | met |
+| 28 | Phase 5: scenario ids; `JsonSerializer`/`ShuttleStatus` | all present | met |
+| 29 | Phase 6: contract greps and unchanged contract | all exit 0; empty diff | met |
+| 30 | Phase 6: `docker build` exit 0, `docker run` exit 0 | build 0, **run 0** (was 1) | **met** |
+| 31 | Phase 6: container `grep -c 'Passed!'` prints 4 | **prints 4** (was 3) | **met** |
+| 32 | M0 regression: `dotnet build`/`dotnet test` still green | build 0, test 0 | met |
+
+**32 of 32 met.** The five criteria that failed last time (17, 18, 30, 31, 32) were one root cause
+— the unloading fault test — and that test now passes. Criterion 20 stays met.
+
+## Mutation evidence — both prior findings fixed and non-vacuous
+
+All against a throwaway copy at `/tmp/opencode/mut04` (`git archive HEAD`, deleted after); `src/`
+was never edited in this repo. Baseline on the copy: `Passed: 22, Total: 22` for
+`ShuttleCore.Tests`.
+
+### Fix 1 — `RaiseFault_from_unloading_enters_fault` now reaches `RaiseFault` (was the red test)
+
+**Mutation A — make `RaiseFault` reject every non-`Idle` state** (insert `EnsureState(ShuttleState.Idle,
+"raise fault")` after `EnsureInOrder`; the exact regression record 06 forbids):
+
+```
+Failed: 3, Passed: 19, Total: 22
+  Failed … RaiseFault_from_moving_enters_fault
+  Failed … RaiseFault_from_loading_enters_fault
+  Failed … RaiseFault_from_unloading_enters_fault   <-- the previously-red test now goes red
+```
+
+Baseline green for that test on the honest tree plus red under Mutation A means it genuinely
+reaches `RaiseFault` while the machine is **`Unloading`** and genuinely asserts
+`ShuttleState.Fault`. The one token the last re-review asked for (`Start` →
+`Start.Add(Timing.Load)`) is present and the clock guard no longer fires first.
+
+### Fix 2 — `StartUnload_into_an_occupied_slot_is_rejected` now exercises the occupancy guard
+
+The test targets `A01-L01-S02`, which holds `PLT-002` (placed at `RejectionTests.cs:46`), after a
+completed load of `PLT-001` from `S01`, at `Start.Add(Timing.Load)` — equal to the previous event's
+timestamp, so `EnsureInOrder` passes. Guard order in `StartUnload`: in-order → state (`Idle`, from
+`CompleteLoad`) → slot-in-lane → carrying-a-pallet → **occupancy (`Shuttle.cs:86`)**.
+
+1. **Removing the occupancy guard makes the named test go red** — not merely still-passing:
+   ```
+   Failed ShuttleCore.Tests.RejectionTests.StartUnload_into_an_occupied_slot_is_rejected
+    Error Message:
+     Assert.Throws() Failure: No exception was thrown
+   Failed! - Failed: 1, Passed: 21, Total: 22
+   ```
+   Only that one test changes; every other test stays green. This is the opposite of the last two
+   re-reviews, where deleting the guard left the named test green.
+2. **Which guard fires, captured directly** (guard restored, test tweaked in the copy to rethrow the
+   caught message): `MESSAGE-CAUGHT: slot A01-L01-S02 is occupied`. That is the occupancy check at
+   `Shuttle.cs:86`, not the clock guard at `:117` and not the state guard at `:83`. The target slot
+   is genuinely occupied and the timestamp order is legal.
+
+Both fixes are the "a test named X passes" vs "X is true" distinction resolved in favour of the
+latter.
+
+## State × event coverage — 10/10
+
+Record 06's ten rows, each matched to a passing test; the two rows that were uncovered two reviews
+ago are now genuinely reached (Mutation A above).
+
+| # | Row (record 06) | Test | Evidence |
+|---|---|---|---|
+| 1 | `StartMove` Idle→Moving | `StartMove_from_idle_enters_moving` | green |
+| 2 | `CompleteMove` Moving→Idle | `CompleteMove_from_moving_enters_idle` | green |
+| 3 | `StartLoad` Idle→Loading | `StartLoad_from_idle_enters_loading` | green |
+| 4 | `CompleteLoad` Loading→Idle | `CompleteLoad_from_loading_enters_idle` | green |
+| 5 | `StartUnload` Idle→Unloading | `StartUnload_from_idle_enters_unloading` | green |
+| 6 | `CompleteUnload` Unloading→Idle | `CompleteUnload_from_unloading_enters_idle` | green |
+| 7 | `RaiseFault` Idle→Fault | `RaiseFault_from_idle_enters_fault` | green |
+| 8 | `RaiseFault` Moving→Fault | `RaiseFault_from_moving_enters_fault` | green, red under Mutation A |
+| 9 | `RaiseFault` Loading→Fault | `RaiseFault_from_loading_enters_fault` | green, red under Mutation A |
+| 10 | `RaiseFault` Unloading→Fault | `RaiseFault_from_unloading_enters_fault` | green, red under Mutation A |
+
+All ten anchored names appear in `dotnet test --list-tests`, all ten pass, and the four `RaiseFault`
+rows are mutation-proven to fail when the fault guard is broken. **10/10.**
+
+## Findings (second re-review)
+
+- **B1 (prior Blocker) — cleared.** `RaiseFault_from_unloading_enters_fault` passes at
+  `Start.Add(Timing.Load)`; Mutation A proves it real. No `ShuttleCore` change was needed.
+- **S1 (prior Should-fix, third appearance) — cleared.** The occupied-slot test targets a
+  genuinely occupied slot at a legal timestamp; removing the occupancy guard turns it red and the
+  captured message names the occupancy guard. The `//IDK about this one` marker is gone.
+- **C1 — `Rack.LaneId`/`SlotId` vs the lesson's fixed `LaneIds`/`SlotIds` (prior consider 3):**
+  unchanged, non-blocking, no consumer wired. Carry to the professor; one side should move before
+  M7's dashboard.
+- **C2 — `RackTests` weaker than record 05's claims (prior consider 4):** unchanged, non-blocking.
+- **C3 — R2/R4 remain due before M2.** `src/FleetManager.Tests/StartTests.cs` is still byte-identical
+  to `11f82d1` (`git diff 11f82d1..HEAD -- …/StartTests.cs` empty): unbounded `WaitForExit()` (R2),
+  the 9-space indent and no trailing newline (R4). Not this lesson's deliverable; the reference
+  pattern is `DemoTests.cs`. **Status below.**
+- **C4 — cosmetic slips:** the `//IDK about this one` and the blank line at
+  `RejectionTests.cs:9` were addressed by the edit (comment removed); one blank line remains at
+  `RejectionTests.cs:9` (line 8 is also blank) — cosmetic, non-blocking.
+
+### AGENTS.md compliance (re-checked)
+
+- **Decision logic pure and configuration respected:** Phases 1–3 all clean; `ShuttleCore` was not
+  touched by this commit; no `Sleep`, no duration literal, no network vocabulary, references nothing.
+- **Message contract untouched:** Phase 6 greps exit 0, zero-line contract diff. The demo's wire
+  shape still matches `v1.md`.
+- **No hard-coded config:** `ShuttleCore` has no duration literal or `TimeSpan` constructor; the
+  demo/tests' `5 s`/`2 s`/`SH-01`/`PLT-001`/`2026-01-01` are scenario data (record 06 §4).
+- **No throwaway/copied work:** md5 duplicate check silent; `git diff 673bede..cb895a5 -- src/ShuttleCore`
+  empty, so the prior proofs that the scripted and demo tests are real still hold.
+- **Tests pass before a review can pass:** **satisfied** — `dotnet test` exit 0, container exit 0.
+- **No stray tracked build artifacts:** `git ls-files | grep -E '/(bin|obj)/'` prints nothing.
+
+## README
+
+**Changed:** the M1 row is flipped to `done`, and a verification note for M1 is added under
+`### Verification notes`, naming the exact commands. See the next section for the note text.
+
+## Cleanup
+
+- No `docker compose` service was started (none needed); the only `docker` actions were `docker
+  build` and a `--rm docker run`, which cleans its own container. `docker ps -a` shows only the
+  pre-existing 10-day-old `hello-world` container (`elastic_jemison`), left as found.
+- `/tmp/opencode/mut04` (the `git archive` copy used for every mutation) deleted; `/tmp/opencode`
+  is empty.
+- `dotnet build-server shutdown` run; no `dotnet test`, `dotnet run`, or MSBuild node left.
+- `git status --porcelain` after this review: only this file and `README.md`.
+
+## What is next
+
+1. **M1 closes.** The M0 gates still hold; the next lesson is M2 (message contract and transport),
+   against record 02.
+2. **Carry-forward due before the M2 lesson: R2/R4** — bound the wait in
+   `src/FleetManager.Tests/StartTests.cs` with a named timeout constant and `WaitForExit(<timeout>)`
+   /`Kill(entireProcessTree: true)` (copy `DemoTests.cs`), fix the 9-space indent and the missing
+   trailing newline. Not blocking M1, but the last three reviews have named it; it is now only the
+   M2 lesson away from being a should-fix. R2/R4 **still open**.
+3. **Carry to the professor (non-blocking):** C1's `LaneIds`/`SlotIds` naming decision, and C2's
+   `RackTests` assertions (`1, 1, 3` distance triple; membership rejection of `A01-L01-S03`/
+   `banana`).
