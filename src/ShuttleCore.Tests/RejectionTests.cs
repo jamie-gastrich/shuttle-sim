@@ -11,9 +11,9 @@ public class RejectionTests
     public void StartMove_while_not_idle_is_rejected()
     {
         var rack = new Rack(aisleCount: 2, lanesPerAisle: 2, slotsPerLane: 2);
-        var shuttle = new Shuttle("SH-01", rack, "A01-L02", Timing);
-        rack.Place("A01-L02-S01", "PLT-001");
-        shuttle.StartLoad("A01-L02-S01", Start);
+        var shuttle = new Shuttle("SH-01", rack, "A01-L01", Timing);
+        rack.Place("A01-L01-S01", "PLT-001");
+        shuttle.StartLoad("A01-L01-S01", Start);
 
         Assert.Throws<ShuttleRejectedException>(() => shuttle.StartMove("A02-L02", Start.AddSeconds(1)));
     }
@@ -41,11 +41,12 @@ public class RejectionTests
     public void StartUnload_into_an_occupied_slot_is_rejected() //IDK about this one
     {
         var rack = new Rack(aisleCount: 2, lanesPerAisle: 2, slotsPerLane: 2);
-        var shuttle = new Shuttle("SH-01", rack, "A01-L02", Timing);
-        rack.Place("A01-L02-S01", "PLT-001");
-        shuttle.StartLoad("A01-L02-S01", Start);
+        var shuttle = new Shuttle("SH-01", rack, "A01-L01", Timing);
+        rack.Place("A01-L01-S01", "PLT-001");
+        shuttle.StartLoad("A01-L01-S01", Start);
+        shuttle.CompleteLoad(Start.Add(Timing.Load));
 
-        Assert.Throws<ShuttleRejectedException>(() => shuttle.StartUnload("A01-L02-S01", Start.AddSeconds(1)));
+        Assert.Throws<ShuttleRejectedException>(() => shuttle.StartUnload("A01-L01-S01", Start.AddSeconds(1)));
     }
 
     [Fact]

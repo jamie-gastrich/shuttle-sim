@@ -108,34 +108,33 @@ public class StateTransitionTests
         Assert.Equal(ShuttleState.Fault, shuttle.State);
     }
 
-    // These are commented out because they cause the exceptions that they are testing for...
-    // [Fact]
-    // public void RaiseFault_from_loading_enters_fault()
-    // {
-    //     var rack = new Rack(aisleCount: 2, lanesPerAisle: 2, slotsPerLane: 2);
-    //     var shuttle = new Shuttle("SH-01", rack, "A01-L01", Timing);
-    //     var reason = "pallet not detected";
+    [Fact]
+    public void RaiseFault_from_loading_enters_fault()
+    {
+        var rack = new Rack(aisleCount: 2, lanesPerAisle: 2, slotsPerLane: 2);
+        var shuttle = new Shuttle("SH-01", rack, "A01-L01", Timing);
+        rack.Place("A01-L01-S01", "PLT-001");
+        var reason = "pallet not detected";
 
-    //     shuttle.StartLoad("A01-L01-S01", Start);
-    //     shuttle.RaiseFault(reason, Start);
+        shuttle.StartLoad("A01-L01-S01", Start);
+        shuttle.RaiseFault(reason, Start);
 
-    //     Assert.Equal(ShuttleState.Fault, shuttle.State);
-    // }
+        Assert.Equal(ShuttleState.Fault, shuttle.State);
+    }
 
-    // [Fact]
-    // public void RaiseFault_from_unloading_enters_fault()
-    // {
-    //     var rack = new Rack(aisleCount: 2, lanesPerAisle: 2, slotsPerLane: 2);
-    //     var shuttle = new Shuttle("SH-01", rack, "A01-L01", Timing);
-    //     rack.Place("A01-L01-S01", "PLT-001");
-    //     rack.Place("A01-L01-S02", "PLT-002");
-    //     var reason = "slot is not empty";
+    [Fact]
+    public void RaiseFault_from_unloading_enters_fault()
+    {
+        var rack = new Rack(aisleCount: 2, lanesPerAisle: 2, slotsPerLane: 2);
+        var shuttle = new Shuttle("SH-01", rack, "A01-L01", Timing);
+        rack.Place("A01-L01-S01", "PLT-001");
+        var reason = "slot is not empty";
 
-    //     shuttle.StartLoad("A01-L01-S01", Start);
-    //     shuttle.CompleteLoad(Start.Add(Timing.Load));
-    //     shuttle.StartUnload("A01-L01-S02", Start.Add(Timing.Load));
-    //     shuttle.RaiseFault(reason, Start);
+        shuttle.StartLoad("A01-L01-S01", Start);
+        shuttle.CompleteLoad(Start.Add(Timing.Load));
+        shuttle.StartUnload("A01-L01-S01", Start.Add(Timing.Load));
+        shuttle.RaiseFault(reason, Start);
 
-    //     Assert.Equal(ShuttleState.Fault, shuttle.State);
-    // }
+        Assert.Equal(ShuttleState.Fault, shuttle.State);
+    }
 }
