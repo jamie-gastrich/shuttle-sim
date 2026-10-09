@@ -3,4 +3,8 @@
   <Project Path="Contracts/Contracts.csproj" />
   <Project Path="FleetManager.Tests/FleetManager.Tests.csproj" />
   <Project Path="FleetManager/FleetManager.csproj" />
+  <Project Path="ShuttleCore.Tests/ShuttleCore.Tests.csproj" />
+  <Project Path="ShuttleCore/ShuttleCore.csproj" />
+  <Project Path="ShuttleSim.Tests/ShuttleSim.Tests.csproj" />
+  <Project Path="ShuttleSim/ShuttleSim.csproj" />
 </Solution>
