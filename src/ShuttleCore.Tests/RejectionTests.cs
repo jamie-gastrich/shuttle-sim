@@ -38,15 +38,16 @@ public class RejectionTests
     }
     
     [Fact]
-    public void StartUnload_into_an_occupied_slot_is_rejected() //IDK about this one
+    public void StartUnload_into_an_occupied_slot_is_rejected()
     {
         var rack = new Rack(aisleCount: 2, lanesPerAisle: 2, slotsPerLane: 2);
         var shuttle = new Shuttle("SH-01", rack, "A01-L01", Timing);
         rack.Place("A01-L01-S01", "PLT-001");
+        rack.Place("A01-L01-S02", "PLT-002");
         shuttle.StartLoad("A01-L01-S01", Start);
         shuttle.CompleteLoad(Start.Add(Timing.Load));
 
-        Assert.Throws<ShuttleRejectedException>(() => shuttle.StartUnload("A01-L01-S01", Start.AddSeconds(1)));
+        Assert.Throws<ShuttleRejectedException>(() => shuttle.StartUnload("A01-L01-S02", Start.Add(Timing.Load)));
     }
 
     [Fact]

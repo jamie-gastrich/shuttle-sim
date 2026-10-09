@@ -133,7 +133,7 @@ public class StateTransitionTests
         shuttle.StartLoad("A01-L01-S01", Start);
         shuttle.CompleteLoad(Start.Add(Timing.Load));
         shuttle.StartUnload("A01-L01-S01", Start.Add(Timing.Load));
-        shuttle.RaiseFault(reason, Start);
+        shuttle.RaiseFault(reason, Start.Add(Timing.Load));
 
         Assert.Equal(ShuttleState.Fault, shuttle.State);
     }
