@@ -656,8 +656,9 @@ grep -qE '^Version: 1$' docs/contract/v1.md                          # exit 0: v
 for s in MessageEnvelope MoveCommandMessage CommandAckMessage ShuttleStatusMessage; do
   grep -rq "$s" src/Contracts --include='*.cs' || echo "missing type: $s"; done   # nothing
 grep -rq 'const int Current = 2' src/Contracts --include='*.cs'      # exit 0
-for k in MoveCommand commandAck shuttleStatus; do
-  grep -rq "\"$k\"" src/Contracts --include='*.cs' || echo "missing wire name: $k"; done  # nothing
+for k in moveCommand commandAck shuttleStatus; do
+  grep -q "const string [A-Za-z]* *= *\"$k\"" src/Contracts/MessageTypes.cs \
+    || echo "missing wire name: $k"; done                     # nothing
 grep -qE '^Version: 2' docs/contract/v2.md                           # exit 0
 grep -q 'MessageEnvelope' docs/contract/v2.md                        # exit 0
 grep -q 'CommandAckMessage' docs/contract/v2.md                      # exit 0
@@ -665,9 +666,12 @@ grep -q 'CommandAckMessage' docs/contract/v2.md                      # exit 0
 
 ```bash
 # Phase 2 rules — no literals where configuration belongs; no sleeps
-grep -rnE 'Thread\.Sleep|Task\.Delay' src --include='*.cs'           # nothing, anywhere
-grep -rnE '"shuttle/[A-Za-z0-9+_/-]+"' src --include='*.cs'          # nothing: no full-topic literals
-grep -rniE '127\.0\.0\.1|localhost|:1883|Host=' src --include='*.cs' # nothing: addresses are config
+grep -rnE 'Thread\.Sleep|Task\.Delay' src --include='*.cs' \
+  --exclude-dir='*.Tests' --exclude-dir='obj' --exclude-dir='bin'    # nothing in src app code
+grep -rnE '"shuttle/[A-Za-z0-9+_/-]+"' src --include='*.cs' \
+  --exclude-dir='*.Tests' --exclude-dir='obj' --exclude-dir='bin'    # nothing: no topic literals in app code
+grep -rniE '127\.0\.0\.1|localhost|:1883|Host=' src --include='*.cs' \
+  --exclude-dir='*.Tests' --exclude-dir='obj' --exclude-dir='bin'    # nothing: addresses are config
 grep -rn 'WaitForExit()' src/FleetManager.Tests --include='*.cs'     # nothing: R2 fixed
 grep -q 'WaitForExit(' src/FleetManager.Tests/StartTests.cs          # exit 0: a bounded wait
 grep -qE 'Timeout' src/FleetManager.Tests/StartTests.cs              # exit 0: a named bound
@@ -678,10 +682,13 @@ for f in $(grep -rl '\[Fact\]' src --include='*.cs'); do
 ```
 
 The `..\\$1\\$1.csproj` in `edge` is a literal backslash, not a regex — ProjectReference paths
-use Windows separators even on Linux, so the grep must escape them. The topic-literal gate is
-scoped: the *root* `"shuttle"` and the single segment strings live inside `TopicScheme` and in
-`appsettings.json`; what it forbids is a whole topic (`"shuttle/SH-01/ack"`) typed into decision
-code. The `MQTTnet` check runs the other way: exactly one project may see it.
+use Windows separators even on Linux, so the grep must escape them. The sleep, topic-literal,
+and address gates above use `--exclude-dir='*.Tests'` because tests legitimately assert whole
+topics (`TopicSchemeTests`), connect an in-process broker on loopback, and may wait; only app
+code is forbidden them. The sharpest case is the topic-literal gate: the *root* `"shuttle"` and
+the single segment strings live inside `TopicScheme` and in `appsettings.json`; what it forbids
+is a whole topic (`"shuttle/SH-01/ack"`) typed into app code. The `MQTTnet` check runs the
+other way: exactly one project may see it.
 
 ```bash
 # Phase 2b — R2/R4 are actually fixed (review 03's items)

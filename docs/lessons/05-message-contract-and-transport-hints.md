@@ -17,7 +17,9 @@ Open a tier only when you are stuck. Stop reading as soon as the tier gets you m
   matches a reply to its cause; an MQTT topic cannot carry it.
 - **No topic literal outside `TopicScheme`.** `{root}/{shuttleId}/{kind}`, with the manager
   subscribing `{root}/+/ack` and `{root}/+/status`. The root, host, port, ids, and QoS come from
-  `appsettings.json` + environment variables.
+  `appsettings.json` + environment variables. The acceptance's no-literal/no-sleep greps are scoped
+  to **app code** (`--exclude-dir='*.Tests'`): your `TopicSchemeTests` may assert whole topics and
+  your in-process broker test may name loopback.
 - **QoS 1 is at-least-once**: the broker *really* delivers duplicates (you can see it). That is
   why the idempotency guard is not optional — it is the bill for choosing QoS 1.
 - **Remember effects, not messages.** `MarkCompleted` only for an **accepted** command. A duplicate
