@@ -4,7 +4,7 @@ using MQTTnet.Server;
 using Messaging;
 using MqttMessaging;
 
-public sealed class MQTTnetTest
+public sealed class MqttMessageBusTests
 {
     [Fact]
     public async Task Publishes_and_subscribes_over_an_in_process_broker()
@@ -76,22 +76,27 @@ public sealed class MQTTnetTest
                     MqttQualityOfService.AtLeastOnce,
                     MqttQualityOfService.AtLeastOnce)));
 
+            var received = new TaskCompletionSource<string>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
             var matches = 0;
 
             await bus.ConnectAsync(CancellationToken.None);
             await bus.SubscribeAsync("sample/+/status", MessageFamily.Status,
                 (message, _) =>
                 {
+                    Interlocked.Increment(ref matches);
+
                     if (message.Topic == "sample/SH-01/status" && message.Payload == "match")
-                        Interlocked.Increment(ref matches);
+                        received.TrySetResult(message.Payload);
+
                     return Task.CompletedTask;
                 },
                 CancellationToken.None);
 
-            await bus.PublishAsync("sample/SH-01/status", "match", MessageFamily.Status, CancellationToken.None);
             await bus.PublishAsync("sample/SH-01/extra", "miss", MessageFamily.Status, CancellationToken.None);
+            await bus.PublishAsync("sample/SH-01/status", "match", MessageFamily.Status, CancellationToken.None);
 
-            await Task.Delay(250);
+            await received.Task.WaitAsync(TimeSpan.FromSeconds(5));
             Assert.Equal(1, matches);
             await bus.DisposeAsync();
         }
