@@ -22,6 +22,7 @@
     <ProjectReference Include="..\ShuttleSim\ShuttleSim.csproj" />
     <ProjectReference Include="..\ShuttleCore\ShuttleCore.csproj" />
     <ProjectReference Include="..\Contracts\Contracts.csproj" />
+    <ProjectReference Include="..\Messaging\Messaging.csproj" />
   </ItemGroup>
 
 </Project>

@@ -132,4 +132,7 @@ public sealed class Shuttle
 
     private TimeSpan TravelTime(string fromLane, string toLane) =>
         TimeSpan.FromTicks(_rack.DistanceInLanes(fromLane, toLane) * _timing.MovePerLane.Ticks);
+
+    public TimeSpan TravelTimeTo(string lane) =>
+        TimeSpan.FromTicks(_rack.DistanceInLanes(_position, lane) * _timing.MovePerLane.Ticks);
 }

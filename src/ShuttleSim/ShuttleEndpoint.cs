@@ -1,0 +1,103 @@
+using System.Text.Json;
+using Contracts;
+using Messaging;
+using ShuttleCore;
+
+public sealed class ShuttleEndpoint
+{
+    private readonly Shuttle _shuttle;
+    private readonly IMessageBus _bus;
+    private readonly TopicScheme _topics;
+    private readonly string _shuttleId;
+    private readonly IdempotencyGuard _guard;
+
+    public ShuttleEndpoint(Shuttle shuttle, IMessageBus bus, TopicScheme topics,
+        string shuttleId, IdempotencyGuard guard)
+    {
+        _shuttle = shuttle;
+        _bus = bus;
+        _topics = topics;
+        _shuttleId = shuttleId;
+        _guard = guard;
+    }
+
+    public async Task HandleCommandAsync(string payload, DateTime now, CancellationToken ct)
+    {
+        MessageEnvelope? envelope;
+        try
+        {
+            envelope = JsonSerializer.Deserialize<EnvelopeWrapper>(payload)?.Envelope;
+        }
+        catch (JsonException)
+        {
+            return;
+        }
+
+        if (envelope is null || string.IsNullOrWhiteSpace(envelope.MessageId) ||
+            envelope.ContractVersion != ContractVersion.Current ||
+            envelope.MessageType != MessageTypes.MoveCommand)
+            return;
+
+        MoveCommandMessage? command;
+        try
+        {
+            command = JsonSerializer.Deserialize<MoveCommandMessage>(payload);
+        }
+        catch (JsonException)
+        {
+            return;
+        }
+
+        if (command is null || command.Envelope is null ||
+            command.Envelope.MessageId != envelope.MessageId ||
+            command.ShuttleId != _shuttleId || string.IsNullOrWhiteSpace(command.ToLane))
+            return;
+
+        var messageId = command.Envelope.MessageId;
+        if (_guard.IsDuplicate(messageId))
+        {
+            await AcknowledgeAsync(command, accepted: true, reason: null, now, ct);
+            return;
+        }
+
+        try
+        {
+            _shuttle.StartMove(command.ToLane, now);
+        }
+        catch (ShuttleRejectedException exception)
+        {
+            await AcknowledgeAsync(command, accepted: false, exception.Message, now, ct);
+            return;
+        }
+
+        _guard.MarkCompleted(messageId);
+        await AcknowledgeAsync(command, accepted: true, reason: null, now, ct);
+        await PublishStatusAsync("moving", now, ct);
+
+        var arrival = now + _shuttle.TravelTimeTo(command.ToLane);
+        _shuttle.CompleteMove(arrival);
+        await PublishStatusAsync("idle", arrival, ct);
+    }
+
+    private Task AcknowledgeAsync(MoveCommandMessage command, bool accepted, string? reason,
+        DateTime sentAt, CancellationToken ct)
+    {
+        var envelope = MessageEnvelopes.Create(
+            MessageTypes.CommandAck, _shuttleId, sentAt, command.Envelope.MessageId);
+        var acknowledgement = new CommandAckMessage(envelope, accepted, reason);
+        return _bus.PublishAsync(_topics.Ack(_shuttleId), JsonSerializer.Serialize(acknowledgement),
+            MessageFamily.Ack, ct);
+    }
+
+    private Task PublishStatusAsync(string state, DateTime sentAt, CancellationToken ct)
+    {
+        var status = new ShuttleStatus(
+            _shuttleId, state, _shuttle.Position, sentAt, _shuttle.FaultReason);
+        var envelope = MessageEnvelopes.Create(MessageTypes.ShuttleStatus, _shuttleId, sentAt);
+        var message = new ShuttleStatusMessage(envelope, status);
+        return _bus.PublishAsync(_topics.Status(_shuttleId), JsonSerializer.Serialize(message),
+            MessageFamily.Status, ct);
+    }
+
+    private sealed record EnvelopeWrapper(MessageEnvelope Envelope);
+}
