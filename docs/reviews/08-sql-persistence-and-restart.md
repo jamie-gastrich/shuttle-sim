@@ -503,3 +503,235 @@ This slice is now the right shape and the gates are honest: the DB-less containe
 - Throwaway `/tmp/opencode/rev08b` and this round's scratch files deleted; `/tmp/opencode/mqttinspect` left as found.
 - `dotnet build-server shutdown` run.
 - No file under `src/` was modified; the repo working tree is clean. `docs/reviews/08-sql-persistence-and-restart.md` is extended and `README.md` is untouched because the verdict is pass with changes.
+
+---
+
+# Re-review (round 3 — final) — 2026-10-11, commit `6e01777`
+
+**Date:** 2026-10-11
+**Reviewed:** commit `6e01777` ("M3: fix: remove unused database helper methods from RestartSurvivalTests") on top of `0da93e7`. HEAD is `6e01777`. The round-2 `src/` change (deleting `EnsureDatabaseIsRunningAsync` / `StartDatabaseAsync` / `FindRepoRoot`) is committed; the lesson L3 fix is not (see caveat).
+**Verdict change: pass with changes → pass (clean).** Both open items from round 2 are genuinely cleared: S3 (dead docker-auto-start helpers) is deleted, and L3 (Phase 7 grep false-positives) is fixed. Every functional gate re-ran green and nothing regressed.
+
+> **Git-state caveat — the owner must commit it.** The L3 lesson fix is **uncommitted**. The working tree has the tightened Phase 7 grep, but `HEAD:docs/lessons/08-sql-persistence-and-restart.md` still carries the old `grep -qE 'Process\.Start|"docker"'`. This review ran the gate against the **working tree** (which is what the owner must satisfy) and it passes; for the fix to be real in history the owner must commit `docs/lessons/08-sql-persistence-and-restart.md`. This review did not touch or commit that file.
+
+---
+
+## Per-finding grades (full history)
+
+| Finding | Round | Status now | Evidence |
+|---|---|---|---|
+| **B1 (blocker)** — DB test broke the fresh container | 1 | **cleared** | `docker run --rm shuttle-fleet-build` exit 0, 7 `Passed!`; `FleetManager.Tests` 5/6 (integration excluded) |
+| **S1 (should-fix)** — DB test in the pure test project | 1 | **cleared** | `RestartSurvivalTests.cs` in `src/FleetManager.Tests/`; `grep -c 'FleetManager' src/FleetCore.Tests/FleetCore.Tests.csproj` prints 0 |
+| **S2 (should-fix)** — rename churn + double spaces | 1 | **cleared** | no `CancellationToken  x` double spaces; separate `6929902` commit exists |
+| **C1 (consider)** — `timestamptz` µs vs .NET ticks | 1 | **cleared** | both `FleetTask` constructors truncate (`ToMicrosecondPrecision`); this round's M5 mutation (remove truncation) goes red |
+| **C2 (consider)** — duplicated DDL, hard-coded port/creds | 1 | **cleared** | `ResetDatabaseAsync` is a plain `DELETE`; `BuildConnectionString` follows record 14 §6; whole-string override wins, bad `DB_HOST_PORT` fails fast (both re-verified) |
+| **S3 (should-fix)** — dead docker-auto-start helpers | 2 | **cleared (this round)** | `6e01777` deleted both helpers; `grep -nE 'Process\.Start|docker' src/FleetManager.Tests/RestartSurvivalTests.cs` exits 1 (no match); Phase 7 prints `OK: test does not start docker` |
+| **L1 / L2 (lesson defects)** | 1 | **cleared** | lesson + record 14 require the trait, filtered CMD, config-driven connection string, `FleetManager.Tests` placement |
+| **L3 (lesson defect)** — Phase 7 grep over-broad | 2 | **cleared (this round, uncommitted)** | working-tree pattern passes the current file, does not false-positive on a bare `"docker"` path segment, and catches real regressions (below) |
+| **C3 (consider)** — test reads before it resets | 2 | **open (consider)** | reproduced again this round (below); not blocking |
+| **C4 (consider, design note)** — µs rule lives in the domain | 2 | **open (documentation ask)** | still no written domain invariant; not blocking |
+
+All four previously-open project findings (B1/S1/S2/C1/C2 and L1/L2/L3) are cleared; the two open items are considerations, not gates.
+
+---
+
+## Commands run, verbatim key output
+
+Run from repo root unless stated; exit codes read directly. The database was down for the container run and started only for the with-DB phases. Mutations ran against a throwaway `git archive HEAD` copy at `/tmp/opencode/rev08c`, deleted afterward; no experiment touched `src/`.
+
+### Environment
+
+```
+$ dotnet --version        → 10.0.112
+$ docker --version        → Docker version 29.8.1
+$ docker compose -f docker/compose.yml ps → (nothing up at review start)
+```
+
+### Lesson acceptance, Phases 1–4, 6, 7, 8 (verbatim)
+
+```
+# Phase 1
+tests -f src/FleetCore/IFleetTaskRepository.cs                                    exit 0
+grep -q "InternalsVisibleTo" src/FleetCore/FleetTask.cs                           exit 0
+grep -q "internal FleetTask" src/FleetCore/FleetTask.cs                           exit 0
+# Phase 2
+grep -rniE 'Npgsql|Postgres|Microsoft.Data.SqlClient' src/FleetCore --include='*.cs' --include='*.csproj'
+  (no matches)                                                                    exit 1
+grep -c 'ProjectReference\|PackageReference' src/FleetCore/FleetCore.csproj       prints 0
+grep -c 'FleetManager' src/FleetCore.Tests/FleetCore.Tests.csproj                 prints 0
+# Phase 3
+grep -rni 'Npgsql' src/FleetManager/FleetManager.csproj | grep PackageReference
+  <PackageReference Include="Npgsql" Version="8.0.6" />                           exit 0
+# Phase 4  (DB down)
+dotnet build                                                                       exit 0, 0 Warning(s), 0 Error(s)
+dotnet test ShuttleFleet.slnx -v m --filter "Category!=Integration"               RC 0
+  Passed! … 4 … Contracts.Tests    Passed! … 18 … FleetCore.Tests
+  Passed! … 2 … MqttMessaging.Tests Passed! … 8 … Messaging.Tests
+  Passed! … 22 … ShuttleCore.Tests Passed! … 5 … ShuttleSim.Tests
+  Passed! … 5 … FleetManager.Tests   ← 5/6: the integration test is excluded
+  7 "Passed!" lines, no "Failed!"
+# Phase 6
+docker build -f docker/Dockerfile.build -t shuttle-fleet-build .                   exit 0
+docker run --rm shuttle-fleet-build                                                exit 0
+  7 "Passed!" lines; FleetManager.Tests 5/6; docker run --rm shuttle-fleet-build which docker → exit 1 (no docker binary)
+# Phase 7
+grep -qE 'Trait\("Category",\s*"Integration"\)' src/FleetManager.Tests/RestartSurvivalTests.cs        exit 0
+grep -qF 'Category!=Integration' docker/Dockerfile.build                             exit 0
+grep -qE 'Process\.Start|docker(-compose|[[:space:]]+(compose|run|start|exec))' src/FleetManager.Tests/RestartSurvivalTests.cs
+  → OK: test does not start docker
+# Phase 8
+grep -qE '^Version: 2$' docs/contract/v2.md                                          exit 0
+grep -qE '^Version: 1$' docs/contract/v1.md                                          exit 0
+test ! -f docs/contract/v3.md                                                        exit 0
+grep -rniE 'FleetTask|TaskState' src/Contracts --include='*.cs' --include='*.csproj' no match (exit 1)
+```
+
+### Phase 5 — the DB test TRULY ran (with the database up)
+
+```
+$ docker compose -f docker/compose.yml up -d database                              exit 0, accepting connections
+$ cd src
+$ dotnet test FleetManager.Tests/FleetManager.Tests.csproj -v m --logger "console;verbosity=detailed" --filter "Category=Integration"
+   … FleetManager.Tests -> …/FleetManager.Tests.dll                                ← rebuilt now
+   Passed FleetManager.Tests.RestartSurvivalTests.State_survives_restart_after_persisting_tasks [581 ms]
+   Passed: 1
+   exit 0
+```
+
+The printout is `Passed <name>`, not `Skipped <name>`, on a freshly built test binary.
+
+### Rehydrate-field fidelity spot check (psql)
+
+```
+ task_id      | to_lane |       created_at       |    state    | assigned |   reason
+ task-queued-a    | A01-L01 | 2026-01-01 00:00:00+00 | queued      | <NULL>   | <NULL>
+ task-queued-b    | A01-L02 | 2026-01-01 00:01:00+00 | queued      | <NULL>   | <NULL>
+ task-assigned    | A01-L03 | 2026-01-01 00:02:00+00 | assigned    | SH-01    | <NULL>
+ task-in-progress | A01-L04 | 2026-01-01 00:03:00+00 | in_progress | SH-02    | <NULL>
+ task-done        | A01-L05 | 2026-01-01 00:04:00+00 | done        | SH-03    | <NULL>
+ task-failed      | A01-L06 | 2026-01-01 00:05:00+00 | failed      | <NULL>   | rack empty
+```
+
+FIFO order, wire-name states, and both nullable fields round-trip. `task-queued-a` was created with `start.AddTicks(7)` and reads back `00:00:00` — the µs truncation is doing its job.
+
+### Whole suite with the database up
+
+```
+$ cd src && dotnet test ShuttleFleet.slnx -v m                                     exit 0
+   Passed! 7 lines: 4 / 8 / 18 / 22 / 2 / 5 / 6 = 65 tests
+   (FleetManager.Tests: 6/6 — the integration test included)
+```
+
+### L3 — the tightened grep catches regressions and drops the false positive (throwaway copy)
+
+```
+new pattern: Process\.Start|docker(-compose|[[:space:]]+(compose|run|start|exec))
+new/current-file              → OK (no match)
+old pattern on Path.Combine(root, "docker", "compose.yml")  → FAIL (false positive)   ← old L3 bug
+new pattern on same path segment                            → OK (no match)
+new pattern on Process.Start("docker", "compose up …")      → FAIL (caught, correct)
+new pattern on "docker compose up -d database" (string)     → FAIL (caught, correct)
+new pattern on "docker-compose up -d database"              → FAIL (caught, correct)
+new pattern on Process.Start("docker")                      → FAIL (caught, correct)
+```
+
+### Mutations (throwaway `git archive HEAD`, `/tmp/opencode/rev08c`, deleted after)
+
+Baseline green; each mutation red; restore green. The table was truncated before each run so a failed mutation could not poison the next (see C3).
+
+| Mutation | What changed | Result |
+|---|---|---|
+| M1 wrong load order | `ORDER BY created_at ASC` → `DESC` | **red** (`Failed! 1/1`) |
+| M2 mangled state on load | `"in_progress" => TaskState.Assigned` | **red** |
+| M3 wrong saved column | `state` bound to `task.ToLane` | **red** |
+| M4 field fidelity | `failure_reason` dropped on load | **red** |
+| M5 timestamp truncation removed (C1) | `ToMicrosecondPrecision` returns `value` | **red** |
+| M6 field fidelity | `assigned_shuttle_id` dropped on load | **red** |
+| Restore | — | **green** again |
+
+### Regression checks
+
+- M1 demo: `dotnet run --project ShuttleSim/ShuttleSim.csproj` exit 0, 7 `ShuttleId` status lines; `PLT-001` ends at `A02-L02` (`00:00:19Z` idle).
+- Manager start: `dotnet run --project FleetManager/FleetManager.csproj` exit 0, `Fleet Manager Coming Online` present.
+- M2 (review 06) logging intact: `attempt {n} of {max} for command {id}` (`ReliableCommandSender.cs:66`); `handled …` (:96), `listening on …` (:101).
+- Contract: `v1.md` `Version: 1`, `v2.md` `Version: 2`, no `v3.md`; `src/Contracts` has no `FleetTask`/`TaskState`.
+- Connection string (C2): `SHUTTLE_DB_CONNECTION_STRING` whole wins over a bogus `SHUTTLE_DB_HOST` (exit 0); `DB_HOST_PORT=not-a-port` fails fast with `System.InvalidOperationException : DB_HOST_PORT must be a valid integer.`
+
+### C3 reproduced (consider, not blocking)
+
+Leftover rows from the M3 mutation (`state='A01-L01'`), and a deliberately inserted `state='legacy_state'`, both break the test's first `LoadAllAsync` before its own reset can clear the table:
+
+```
+System.ArgumentException : Unknown task state wire name 'legacy_state'. (Parameter 'wireName')
+```
+
+In the mutation run this showed up as the "restore" check going red until the table was truncated — clean evidence that the read-before-reset ordering is fragile.
+
+---
+
+## Findings
+
+**1. CLEARED — S3 (dead docker-auto-start helpers).** `EnsureDatabaseIsRunningAsync`, `StartDatabaseAsync`, and `FindRepoRoot` are gone from `src/FleetManager.Tests/RestartSurvivalTests.cs` (`6e01777`). No `Process.Start` and no `docker` token remains anywhere in that file, and the lesson's Phase 7 gate prints `OK: test does not start docker`. The file is now 109 lines, all used.
+
+**2. CLEARED — L3 (Phase 7 grep false-positives, uncommitted).** The tightened pattern `Process\.Start|docker(-compose|[[:space:]]+(compose|run|start|exec))` passes the current file, rejects the old false positive (a bare `"docker"` path segment), and still catches every real regression shape. One process note: the fix is only in the working tree — commit the lesson file.
+
+**3. CONSIDER — C3 (read before reset) is still open.** Not a gate, but it is the one real fragility left, and it bites harder once lesson 09/M5 write new row shapes into a developer's persistent database. The reset should ensure-then-delete without parsing row contents.
+
+**4. CONSIDER — C4 (document the µs invariant).** Still a documentation ask: write down "`CreatedAt` is UTC at microsecond precision, matching the database" so a future store/precision change re-triggers the decision.
+
+**Concepts check:** the three required concepts (repository abstraction, persistence shape/mapping, reload/restart survival) are each taught, the list is fully covered, and the lesson stays within the 3-concept cap; the test-gate mechanism is declared an assignment requirement, not a concept, and is specified in record 14. No lesson defect remains.
+
+---
+
+## Explain-it questions — carry into lesson 09
+
+The round-1/2 questions still stand (repository split; internal hydration + `InternalsVisibleTo`; load ordering + `task_id` tie-breaker; why the domain truncates and what `AddTicks(7)` proves; the trait/filter two-gate proof; `BuildConnectionString` precedence; `SaveAllAsync` upsert + transaction). Add:
+
+10. The two dead helpers were deleted, not fixed. Why is auto-starting Docker from the test *permanently* wrong (not just inconvenient) in this project, and what would you use instead if a later DB test needed the database started? (record 14 §7)
+
+### Lines or blocks that look unclear, copied, or unexplained
+
+- `src/FleetManager.Tests/RestartSurvivalTests.cs:14-16` — the `LoadAllAsync` call that exists only to ensure the table, immediately before `ResetDatabaseAsync`; be able to explain why it parses rows first and why that is the C3 risk.
+- `src/FleetCore/FleetTask.cs:87-88` — `ToMicrosecondPrecision` and the `% 10` math; say why both constructors truncate.
+- `src/FleetManager/PostgresFleetTaskRepository.cs:28-34` — the `ON CONFLICT` upsert; say what a plain `INSERT` would break on re-save.
+
+---
+
+## Revisit list
+
+- **Fixture hygiene (C3):** a DB-backed test must be able to reset its fixture without first parsing whatever is in the table.
+- **Write down domain invariants (C4):** the µs precision rule is real; document it where the next change will see it.
+- **Acceptance greps must target behavior, not words** — the L3 fix is the worked lesson: over-broad patterns fail correct code and pass wrong code.
+- **Commit the lesson fix.** Documentation gates that only exist in a working tree are not gates.
+- **Next:** lesson 09 — assignment to several shuttles and the whole-M3 done-when (three shuttles finish a queue, restart end-to-end). Its DB-backed tests reuse this trait/filter/two-gate pattern.
+
+---
+
+## End-product check
+
+This slice is complete and honest for what it claims. The persistence boundary is the right shape (pure `IFleetTaskRepository` in `FleetCore`, Npgsql only in `FleetManager`), the row schema and wire-name mapping match record 13, restart survival is proven against a real database and mutation-proven non-vacuous, and the fresh container is a real DB-less gate rather than a silent skip. For the later milestones this is the carry-forward foundation: lesson 09 saves the board between transitions, and M5 recovery depends on the saved state showing exactly one place for every pallet. The residual risks are C3 (schema evolution on a developer's persistent database) and the still-unwritten µs domain invariant (C4); neither blocks. The M3 done-when is still not met — multi-shuttle assignment and the end-to-end three-shuttle/restart proof are lesson 09. **M3 stays in progress.**
+
+---
+
+## README
+
+**Updated.** The verdict is a clean pass, so the M3 row's verification note is extended with the persistence/restart-survival proof. The state stays **`in progress`** — lesson 09 owns multi-shuttle assignment and the whole-M3 done-when.
+
+---
+
+## What the owner must do next
+
+1. **Commit `docs/lessons/08-sql-persistence-and-restart.md`** so the L3 fix is in history, not just the working tree.
+2. Read the explain-it questions out loud (including new #10).
+3. Optionally tighten the test reset (C3) and write down the µs invariant (C4).
+4. Lesson 09: multi-shuttle assignment and the end-to-end M3 proof.
+
+---
+
+## Cleanup (round 3)
+
+- `docker compose -f docker/compose.yml down` run after the DB phases; `docker ps` shows no shuttle-fleet containers and no `shuttle-fleet_default` network.
+- Throwaway `/tmp/opencode/rev08c` and its backups deleted; `/tmp/opencode/mqttinspect` left as found.
+- `dotnet build-server shutdown` run.
+- The `shuttle-fleet-build:latest` image tag left as found.
+- No file under `src/` was modified. `docs/reviews/08-sql-persistence-and-restart.md` is extended and `README.md`'s M3 verification note is updated. The only working-tree change is the professor's uncommitted lesson L3 fix, which this review did not touch.

@@ -14,7 +14,6 @@ Only the reviewer changes this table, and only after a passing review.
 | M1 | Warehouse model and one shuttle | done |
 | M2 | Message contract and transport | done |
 | M3 | Fleet manager core | in progress |
-*Verification (review 07 re-review, 2026-10-11): `dotnet build` clean; `dotnet test` → 7 Passed! (64/64); fresh Docker build/run → 7 Passed!; Phase 3b gate passes (wire-name test asserts all five names via ToWireName); mutations (Complete guard, EnsureInOrder, NextQueued skip) red when broken. M3 NOT done — SQL persistence and restart proof deferred to lessons 08–09.*
 | M4 | Traffic control | not started |
 | M5 | Faults and recovery | not started |
 | M6 | WMS integration | not started |
@@ -51,4 +50,21 @@ dotnet build
 dotnet test
 ```
 
-Setup details for the broker and database arrive with M0.
+Start the supporting services (broker + database) needed for integration tests:
+
+```
+docker compose -f docker/compose.yml up -d
+```
+
+Build and run tests in a fresh container (M0 gate — no database in the build image):
+
+```
+docker build -f docker/Dockerfile.build -t shuttle-fleet-build .
+docker run --rm shuttle-fleet-build
+```
+
+Stop the services when done:
+
+```
+docker compose -f docker/compose.yml down
+```
