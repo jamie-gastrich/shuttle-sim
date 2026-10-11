@@ -13,7 +13,8 @@ Only the reviewer changes this table, and only after a passing review.
 | M0 | Repo and tooling | done |
 | M1 | Warehouse model and one shuttle | done |
 | M2 | Message contract and transport | done |
-| M3 | Fleet manager core | not started |
+| M3 | Fleet manager core | in progress |
+*Verification (review 07 re-review, 2026-10-11): `dotnet build` clean; `dotnet test` → 7 Passed! (64/64); fresh Docker build/run → 7 Passed!; Phase 3b gate passes (wire-name test asserts all five names via ToWireName); mutations (Complete guard, EnsureInOrder, NextQueued skip) red when broken. M3 NOT done — SQL persistence and restart proof deferred to lessons 08–09.*
 | M4 | Traffic control | not started |
 | M5 | Faults and recovery | not started |
 | M6 | WMS integration | not started |
