@@ -16,7 +16,7 @@ public sealed class FleetTask
 
         TaskId = taskId;
         ToLane = toLane;
-        CreatedAt = createdAt;
+        CreatedAt = ToMicrosecondPrecision(createdAt);
     }
     public string TaskId { get; }
     public string ToLane { get; }
@@ -79,8 +79,11 @@ public sealed class FleetTask
     internal FleetTask(string taskId, string toLane, DateTime createdAt, TaskState state,
         string? assignedShuttleId, string? failureReason, DateTime? lastEventAt)
     {
-        TaskId = taskId; ToLane = toLane; CreatedAt = createdAt;
+        TaskId = taskId; ToLane = toLane; CreatedAt = ToMicrosecondPrecision(createdAt);
         State = state; AssignedShuttleId = assignedShuttleId; FailureReason = failureReason;
         _lastEventAt = lastEventAt;
     }
+
+    private static DateTime ToMicrosecondPrecision(DateTime value) =>
+        new(value.Ticks - value.Ticks % 10, value.Kind);
 }
