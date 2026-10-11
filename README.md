@@ -44,19 +44,18 @@ docker/                 broker, database, and environment
 
 ## Build and test
 
-```
-cd src
-dotnet build
-dotnet test
-```
-
 Start the supporting services (broker + database) needed for integration tests:
 
 ```
 docker compose -f docker/compose.yml up -d
 ```
 
-Build and run tests in a fresh container (M0 gate — no database in the build image):
+```
+cd src
+dotnet build
+dotnet test
+cd ..
+```
 
 ```
 docker build -f docker/Dockerfile.build -t shuttle-fleet-build .
