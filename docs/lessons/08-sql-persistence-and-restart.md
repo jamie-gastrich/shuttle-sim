@@ -299,7 +299,9 @@ docker run --rm shuttle-fleet-build; echo "container RC=$?"
 # Phase 7 — the trait and the filtered CMD are really in place
 grep -qE 'Trait\("Category",\s*"Integration"\)' src/FleetManager.Tests/RestartSurvivalTests.cs
 grep -qF 'Category!=Integration' docker/Dockerfile.build
-grep -qE 'Process\.Start|"docker"' src/FleetManager.Tests/RestartSurvivalTests.cs && echo "FAIL: test must not start docker" || echo "OK: test does not start docker"
+# Match only a real docker launch: Process.Start, docker-compose, or a "docker compose/run/start/exec"
+# command string. A bare "docker" path segment (e.g. Path.Combine(root, "docker", "compose.yml")) must NOT trip this.
+grep -qE 'Process\.Start|docker(-compose|[[:space:]]+(compose|run|start|exec))' src/FleetManager.Tests/RestartSurvivalTests.cs && echo "FAIL: test must not start docker" || echo "OK: test does not start docker"
 
 # Phase 8 — contract unchanged
 grep -qE '^Version: 2$' docs/contract/v2.md
