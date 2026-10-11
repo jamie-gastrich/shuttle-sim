@@ -1,3 +1,7 @@
+using System.Runtime.CompilerServices;
+
+[assembly: InternalsVisibleTo("FleetManager")]
+
 namespace FleetCore;
 
 public sealed class FleetTask
@@ -70,5 +74,13 @@ public sealed class FleetTask
         // reject now earlier than _lastEventAt; equal is allowed
         if (_lastEventAt is DateTime previous && now < previous)
             throw new TaskRejectedException($"clock went backwards: {now:O} < {previous:O}");
+    }
+
+    internal FleetTask(string taskId, string toLane, DateTime createdAt, TaskState state,
+        string? assignedShuttleId, string? failureReason, DateTime? lastEventAt)
+    {
+        TaskId = taskId; ToLane = toLane; CreatedAt = createdAt;
+        State = state; AssignedShuttleId = assignedShuttleId; FailureReason = failureReason;
+        _lastEventAt = lastEventAt;
     }
 }

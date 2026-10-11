@@ -21,7 +21,7 @@ public sealed class ShuttleEndpoint
         _guard = guard;
     }
 
-    public async Task HandleCommandAsync(string payload, DateTime now, CancellationToken ct)
+    public async Task HandleCommandAsync(string payload, DateTime now, CancellationToken  cancellationToken)
     {
         MessageEnvelope? envelope;
         try
@@ -56,7 +56,7 @@ public sealed class ShuttleEndpoint
         var messageId = command.Envelope.MessageId;
         if (_guard.IsDuplicate(messageId))
         {
-            await AcknowledgeAsync(command, accepted: true, reason: null, now, ct);
+            await AcknowledgeAsync(command, accepted: true, reason: null, now, cancellationToken);
             return;
         }
 
@@ -66,37 +66,37 @@ public sealed class ShuttleEndpoint
         }
         catch (ShuttleRejectedException exception)
         {
-            await AcknowledgeAsync(command, accepted: false, exception.Message, now, ct);
+            await AcknowledgeAsync(command, accepted: false, exception.Message, now, cancellationToken);
             return;
         }
 
         _guard.MarkCompleted(messageId);
-        await AcknowledgeAsync(command, accepted: true, reason: null, now, ct);
-        await PublishStatusAsync("moving", now, ct);
+        await AcknowledgeAsync(command, accepted: true, reason: null, now, cancellationToken);
+        await PublishStatusAsync("moving", now, cancellationToken);
 
         var arrival = now + _shuttle.TravelTimeTo(command.ToLane);
         _shuttle.CompleteMove(arrival);
-        await PublishStatusAsync("idle", arrival, ct);
+        await PublishStatusAsync("idle", arrival, cancellationToken);
     }
 
     private Task AcknowledgeAsync(MoveCommandMessage command, bool accepted, string? reason,
-        DateTime sentAt, CancellationToken ct)
+        DateTime sentAt, CancellationToken  cancellationToken)
     {
         var envelope = MessageEnvelopes.Create(
             MessageTypes.CommandAck, _shuttleId, sentAt, command.Envelope.MessageId);
         var acknowledgement = new CommandAckMessage(envelope, accepted, reason);
         return _bus.PublishAsync(_topics.Ack(_shuttleId), JsonSerializer.Serialize(acknowledgement),
-            MessageFamily.Ack, ct);
+            MessageFamily.Ack, cancellationToken);
     }
 
-    private Task PublishStatusAsync(string state, DateTime sentAt, CancellationToken ct)
+    private Task PublishStatusAsync(string state, DateTime sentAt, CancellationToken  cancellationToken)
     {
         var status = new ShuttleStatus(
             _shuttleId, state, _shuttle.Position, sentAt, _shuttle.FaultReason);
         var envelope = MessageEnvelopes.Create(MessageTypes.ShuttleStatus, _shuttleId, sentAt);
         var message = new ShuttleStatusMessage(envelope, status);
         return _bus.PublishAsync(_topics.Status(_shuttleId), JsonSerializer.Serialize(message),
-            MessageFamily.Status, ct);
+            MessageFamily.Status, cancellationToken);
     }
 
     private sealed record EnvelopeWrapper(MessageEnvelope Envelope);

@@ -6,11 +6,11 @@ using ShuttleCore;
 internal sealed class FakeBus : IMessageBus
 {
     public List<(string Topic, string Payload, MessageFamily Family)> Published { get; } = new();
-    public Task ConnectAsync(CancellationToken ct) => Task.CompletedTask;
-    public Task PublishAsync(string topic, string payload, MessageFamily family, CancellationToken ct)
+    public Task ConnectAsync(CancellationToken  cancellationToken) => Task.CompletedTask;
+    public Task PublishAsync(string topic, string payload, MessageFamily family, CancellationToken  cancellationToken)
     { Published.Add((topic, payload, family)); return Task.CompletedTask; }
     public Task SubscribeAsync(string filter, MessageFamily family,
-        Func<MessageReceived, CancellationToken, Task> handler, CancellationToken ct) => Task.CompletedTask;
+        Func<MessageReceived, CancellationToken, Task> handler, CancellationToken  cancellationToken) => Task.CompletedTask;
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
 

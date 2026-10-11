@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\FleetCore\FleetCore.csproj" />
+    <ProjectReference Include="..\FleetManager\FleetManager.csproj" />
   </ItemGroup>
 
 </Project>
