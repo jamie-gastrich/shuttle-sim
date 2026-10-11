@@ -10,9 +10,9 @@ internal sealed class FakeBus : IMessageBus
     private Func<MessageReceived, CancellationToken, Task>? _handler;
     private readonly Queue<Func<Task>> _plannedResponses = new();
 
-    public Task ConnectAsync(CancellationToken  cancellationToken) => Task.CompletedTask;
+    public Task ConnectAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
-    public Task PublishAsync(string topic, string payload, MessageFamily family, CancellationToken  cancellationToken)
+    public Task PublishAsync(string topic, string payload, MessageFamily family, CancellationToken cancellationToken)
     {
         Published.Add((topic, payload, family));
 
@@ -24,7 +24,7 @@ internal sealed class FakeBus : IMessageBus
     }
 
     public Task SubscribeAsync(string filter, MessageFamily family,
-        Func<MessageReceived, CancellationToken, Task> handler, CancellationToken  cancellationToken)
+        Func<MessageReceived, CancellationToken, Task> handler, CancellationToken cancellationToken)
     {
         _handler = handler;
         return Task.CompletedTask;

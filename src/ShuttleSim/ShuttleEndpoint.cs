@@ -21,7 +21,7 @@ public sealed class ShuttleEndpoint
         _guard = guard;
     }
 
-    public async Task HandleCommandAsync(string payload, DateTime now, CancellationToken  cancellationToken)
+    public async Task HandleCommandAsync(string payload, DateTime now, CancellationToken cancellationToken)
     {
         MessageEnvelope? envelope;
         try
@@ -80,7 +80,7 @@ public sealed class ShuttleEndpoint
     }
 
     private Task AcknowledgeAsync(MoveCommandMessage command, bool accepted, string? reason,
-        DateTime sentAt, CancellationToken  cancellationToken)
+        DateTime sentAt, CancellationToken cancellationToken)
     {
         var envelope = MessageEnvelopes.Create(
             MessageTypes.CommandAck, _shuttleId, sentAt, command.Envelope.MessageId);
@@ -89,7 +89,7 @@ public sealed class ShuttleEndpoint
             MessageFamily.Ack, cancellationToken);
     }
 
-    private Task PublishStatusAsync(string state, DateTime sentAt, CancellationToken  cancellationToken)
+    private Task PublishStatusAsync(string state, DateTime sentAt, CancellationToken cancellationToken)
     {
         var status = new ShuttleStatus(
             _shuttleId, state, _shuttle.Position, sentAt, _shuttle.FaultReason);
