@@ -85,12 +85,17 @@ async Task<int> RunServerAsync()
     var shuttle = new Shuttle(shuttleId, rack, startLane, timing);
     var topics = new TopicScheme(messaging.TopicRoot);
 
-    await using var bus = new MqttMessageBus(mqtt with { ClientId = $"{mqtt.ClientId}-{shuttleId}" });
+    await using var bus = new LoggingMessageBus(
+        new MqttMessageBus(mqtt with { ClientId = $"{mqtt.ClientId}-{shuttleId}" }));
     var connectedEndpoint = new ShuttleEndpoint(shuttle, bus, topics, shuttleId,
         new IdempotencyGuard(messaging.IdempotencyCacheSize));
     await bus.ConnectAsync(CancellationToken.None);
     await bus.SubscribeAsync(topics.Command(shuttleId), MessageFamily.Command,
-        (message, ct) => connectedEndpoint.HandleCommandAsync(message.Payload, DateTime.UtcNow, ct),
+        (message, ct) =>
+        {
+            Console.WriteLine($"handled {message.Topic} {MessageIdOf(message.Payload)}");
+            return connectedEndpoint.HandleCommandAsync(message.Payload, DateTime.UtcNow, ct);
+        },
         CancellationToken.None);
 
     Console.WriteLine($"Shuttle {shuttleId} listening on {topics.Command(shuttleId)}");
@@ -118,3 +123,40 @@ IConfigurationRoot LoadConfiguration() => new ConfigurationBuilder()
     .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false)
     .AddEnvironmentVariables()
     .Build();
+
+static string MessageIdOf(string payload)
+{
+    try
+    {
+        using var document = JsonDocument.Parse(payload);
+        return document.RootElement.TryGetProperty("Envelope", out var envelope) &&
+               envelope.TryGetProperty("MessageId", out var id)
+            ? id.GetString() ?? "(unknown)"
+            : "(unknown)";
+    }
+    catch (JsonException)
+    {
+        return "(unknown)";
+    }
+}
+
+sealed class LoggingMessageBus : IMessageBus
+{
+    private readonly IMessageBus _inner;
+
+    public LoggingMessageBus(IMessageBus inner) => _inner = inner;
+
+    public Task ConnectAsync(CancellationToken cancellationToken) => _inner.ConnectAsync(cancellationToken);
+
+    public Task PublishAsync(string topic, string payload, MessageFamily family, CancellationToken cancellationToken)
+    {
+        Console.WriteLine($"published {topic} {payload}");
+        return _inner.PublishAsync(topic, payload, family, cancellationToken);
+    }
+
+    public Task SubscribeAsync(string topicFilter, MessageFamily family,
+        Func<MessageReceived, CancellationToken, Task> handler, CancellationToken cancellationToken)
+        => _inner.SubscribeAsync(topicFilter, family, handler, cancellationToken);
+
+    public ValueTask DisposeAsync() => _inner.DisposeAsync();
+}

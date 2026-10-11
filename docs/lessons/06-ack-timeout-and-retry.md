@@ -568,6 +568,8 @@ keys, one project-reference change, and at least six tests.
          `Rejected` (no retry); on `TimeoutException`, if attempts remain, `await Task.Delay(policy.Backoff, cancellationToken)`
          and loop;
        - after the last attempt with no ack returns `NoAcknowledgement` with `Attempts = MaxAttempts`;
+       - **logs each attempt** (`attempt N of M`, with the command id) so a resend is visible in the
+         log, not just felt in the clock (the review's should-fix S2);
        - removes the waiter before returning, and lets a caller `cancellationToken` cancellation
          propagate as `OperationCanceledException`.
 
@@ -623,7 +625,18 @@ keys, one project-reference change, and at least six tests.
    - `RetryPolicy_rejects_a_non_positive_ack_timeout`;
    - `RetryPolicy_rejects_a_negative_backoff`.
 
-8. **Optional but recommended, from review 05:** clear **S1** (replace the fixed `Task.Delay(250)`
+8. **Shuttle serve-mode message log (fixes lesson defect L1).** In `src/ShuttleSim/Program.cs`,
+   `serve` mode must log what the shuttle does, so an operator can see it and so the Phase 5a/5b
+   `$S`/`$S2` greps read real lines:
+   - one line per message the shuttle **handles** (the incoming `moveCommand` topic and its
+     `MessageId`), and
+   - one line per message it **publishes** — the acknowledgement and each status — logging the same
+     JSON payload that goes on the wire, so the log contains `"State":"moving"` and `"State":"idle"`.
+   Do **not** change the topics, QoS, or payload logic. This is the shuttle-side counterpart of the
+   sender's attempt log (requirement 2): together, `$M` shows what the manager did and `$S` shows what
+   the shuttle did. This is what makes the `$S`/`$S2` greps meaningful instead of impossible.
+
+9. **Optional but recommended, from review 05:** clear **S1** (replace the fixed `Task.Delay(250)`
    in `Subscribe_receives_only_the_matching_topic` with a `TaskCompletionSource` hand-off) and **S2**
    (the file/class are already `MqttMessageBusTests`). Both sit on the seam this lesson extends.
    These are not blockers and are not part of the M2 done-when.
@@ -737,7 +750,9 @@ rm -f "$S" "$M"
 The `sleep 3` is gone: the sender now resends until the ack arrives, so the ordering that lesson 05
 had to fake is the sender's job. The two `grep -c` lines on `$S` are the idempotency check under a
 possible duplicate delivery — the shuttle publishes exactly one `moving` and one `idle`, never a
-second pair, even if the manager tried more than once.
+second pair, even if the manager tried more than once. `$S` is the shuttle's own message log
+(requirement 8): it logs each message it publishes, so the status JSON with `"State":"moving"`
+appears exactly once there.
 
 ```bash
 # Phase 5b — prove a lost command is retried over the real broker (manager first, shuttle second)
@@ -759,6 +774,7 @@ docker compose -f docker/compose.yml down >/dev/null 2>&1
 unset FleetManager__AckTimeoutMs FleetManager__MaxAttempts FleetManager__BackoffMs
 echo "move exit=$MOVE2_EXIT"                                                   # prints move exit=0
 grep -q '"Accepted":true' "$M2F"                                               # exit 0
+grep -qE 'attempt [0-9]+ of [0-9]+' "$M2F"                                     # exit 0: the resend is visible in the manager log
 grep -c '"State":"moving"' "$S2"                                               # prints 1: retried but ran once
 rm -f "$M2F" "$S2"
 ```
@@ -808,7 +824,8 @@ review 05 gave for `Task.Delay(250)`.
 - **Task queue, persistence, database** — M3, record 03.
 - **Traffic, segments, reservations** — M4. **WMS REST** — M6. **Dashboard** — M7. **Load test** — M8.
 - **TLS, credentials, ACL** — deferred by record 02; the dev broker stays anonymous on loopback.
-- **S1/S2** from review 05 remain should-fix, not blockers; requirement 8 offers them.
+- **S1/S2** from review 05 remain should-fix, not blockers; requirement 9 offers them. (Requirement 8
+  is the shuttle's serve-mode message log, the L1 fix; requirement 2's attempt log is the L2 fix.)
 
 **Carried from review 04, for the reviewer's list:** **C1** (`Rack.LaneId`/`SlotId` vs the lesson's
 `LaneIds`/`SlotIds`) and **C2** (weaker `RackTests`) remain open; **C3** (the rejected-command

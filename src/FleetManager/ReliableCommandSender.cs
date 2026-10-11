@@ -63,6 +63,7 @@ public sealed class ReliableCommandSender
             var payload = JsonSerializer.Serialize(command); // same bytes every attempt
             for (var attempt = 1; attempt <= _policy.MaxAttempts; attempt++)
             {
+                Console.Error.WriteLine($"attempt {attempt} of {_policy.MaxAttempts} for command {id}");
                 await _bus.PublishAsync(_topics.Command(command.ShuttleId), payload, MessageFamily.Command, cancellationToken);
                 try
                 {

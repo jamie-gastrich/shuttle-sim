@@ -36,6 +36,9 @@ Open a tier only when you are stuck. Stop reading as soon as the tier gets you m
   under `FleetManager` and read them in `Program.cs`.
 - **R2/R4 stay fixed.** No bare `WaitForExit()`, no nine-space indent, trailing newline. Your new
   test file follows the same rules.
+- **Log, or the gates cannot see the work.** The sender logs `attempt N of M` (requirement 2), and
+  the shuttle's `serve` mode logs each message it handles and publishes (requirement 8). Those two
+  logs are what Phase 5a/5b read: `$M` is the manager's, `$S`/`$S2` is the shuttle's.
 
 ---
 
@@ -89,6 +92,9 @@ Open a tier only when you are stuck. Stop reading as soon as the tier gets you m
 - Test names are listed in the assignment; the anchored `--list-tests` walk checks them.
 - The exact grep strings: `sealed record RetryPolicy`, `enum CommandSendStatus`,
   `record CommandSendResult`, `policy.Backoff`, and the `ProjectReference` to `Messaging.csproj`.
+- The log greps the acceptance uses: `attempt [0-9]+ of [0-9]+` in the manager output (`$M2F`), and
+  the published status JSON (`"State":"moving"`, `"State":"idle"`) in the shuttle output
+  (`$S`/`$S2`, requirement 8).
 
 ---
 
