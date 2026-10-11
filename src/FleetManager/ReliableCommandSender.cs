@@ -1,4 +1,3 @@
-// src/FleetManager/ReliableCommandSender.cs — shape; you write the parsing and the dictionary
 using System.Collections.Concurrent;
 using System.Text.Json;
 using Contracts;
@@ -15,10 +14,10 @@ public sealed class ReliableCommandSender
 {
     private readonly IMessageBus _bus;
     private readonly TopicScheme _topics;
-    private readonly RetryPolicy _policy;
+    private readonly RetryPolicyExtensions.RetryPolicy _policy;
     private readonly ConcurrentDictionary<string, TaskCompletionSource<CommandAckMessage>> _waiters = new();
 
-    public ReliableCommandSender(IMessageBus bus, TopicScheme topics, RetryPolicy policy)
+    public ReliableCommandSender(IMessageBus bus, TopicScheme topics, RetryPolicyExtensions.RetryPolicy policy)
     {
         _bus = bus;
         _topics = topics;

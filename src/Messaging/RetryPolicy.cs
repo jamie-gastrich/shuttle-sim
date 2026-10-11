@@ -1,15 +1,25 @@
 namespace Messaging;
-public sealed record RetryPolicy(int MaxAttempts, TimeSpan AckTimeout, TimeSpan Backoff);
 
 public static class RetryPolicyExtensions
-{
-    public static void Validate(this RetryPolicy policy)
+{   
+    public sealed record RetryPolicy
     {
-        if (policy.MaxAttempts < 1)
-            throw new ArgumentOutOfRangeException(nameof(policy.MaxAttempts), "MaxAttempts must be greater than or equal to 1.");
-        if (policy.AckTimeout <= TimeSpan.Zero)
-            throw new ArgumentOutOfRangeException(nameof(policy.AckTimeout), "AckTimeout must be greater than TimeSpan.Zero.");
-        if (policy.Backoff < TimeSpan.Zero)
-            throw new ArgumentOutOfRangeException(nameof(policy.Backoff), "Backoff must be greater than or equal to TimeSpan.Zero.");
+        public int MaxAttempts { get; }
+        public TimeSpan AckTimeout { get; }
+        public TimeSpan Backoff { get; }
+
+        public RetryPolicy(int maxAttempts, TimeSpan ackTimeout, TimeSpan backoff)
+        {
+            if (maxAttempts < 1)
+                throw new ArgumentOutOfRangeException(nameof(maxAttempts), "MaxAttempts must be greater than or equal to 1.");
+            if (ackTimeout <= TimeSpan.Zero)
+                throw new ArgumentOutOfRangeException(nameof(ackTimeout), "AckTimeout must be greater than TimeSpan.Zero.");
+            if (backoff < TimeSpan.Zero)
+                throw new ArgumentOutOfRangeException(nameof(backoff), "Backoff must be greater than or equal to zero.");
+
+            MaxAttempts = maxAttempts;
+            AckTimeout = ackTimeout;
+            Backoff = backoff;
+        }
     }
 }

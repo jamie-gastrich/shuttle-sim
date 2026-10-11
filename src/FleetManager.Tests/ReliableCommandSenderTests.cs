@@ -65,7 +65,7 @@ public sealed class ReliableCommandSenderTests
     public async Task Lost_acknowledgement_is_retried_with_the_same_message_id()
     {
         var bus = new FakeBus();
-        var retry = new RetryPolicy(3, TimeSpan.FromMilliseconds(20), TimeSpan.Zero);
+        var retry = new RetryPolicyExtensions.RetryPolicy(3, TimeSpan.FromMilliseconds(20), TimeSpan.Zero);
         var sender = new ReliableCommandSender(bus, new TopicScheme("root"), retry);
         await bus.SubscribeAsync("root/+/ack", MessageFamily.Ack, sender.OnAckReceivedAsync, CancellationToken.None);
 
@@ -94,7 +94,7 @@ public sealed class ReliableCommandSenderTests
     public async Task Retries_stop_after_the_configured_attempts()
     {
         var bus = new FakeBus();
-        var retry = new RetryPolicy(3, TimeSpan.FromMilliseconds(20), TimeSpan.Zero);
+        var retry = new RetryPolicyExtensions.RetryPolicy(3, TimeSpan.FromMilliseconds(20), TimeSpan.Zero);
         var sender = new ReliableCommandSender(bus, new TopicScheme("root"), retry);
         await bus.SubscribeAsync("root/+/ack", MessageFamily.Ack, sender.OnAckReceivedAsync, CancellationToken.None);
 
@@ -117,7 +117,7 @@ public sealed class ReliableCommandSenderTests
     public async Task Rejected_acknowledgement_is_not_retried()
     {
         var bus = new FakeBus();
-        var retry = new RetryPolicy(3, TimeSpan.FromMilliseconds(20), TimeSpan.Zero);
+        var retry = new RetryPolicyExtensions.RetryPolicy(3, TimeSpan.FromMilliseconds(20), TimeSpan.Zero);
         var sender = new ReliableCommandSender(bus, new TopicScheme("root"), retry);
         await bus.SubscribeAsync("root/+/ack", MessageFamily.Ack, sender.OnAckReceivedAsync, CancellationToken.None);
 
@@ -139,7 +139,7 @@ public sealed class ReliableCommandSenderTests
     public async Task Accepted_acknowledgement_stops_retrying()
     {
         var bus = new FakeBus();
-        var retry = new RetryPolicy(3, TimeSpan.FromMilliseconds(20), TimeSpan.Zero);
+        var retry = new RetryPolicyExtensions.RetryPolicy(3, TimeSpan.FromMilliseconds(20), TimeSpan.Zero);
         var sender = new ReliableCommandSender(bus, new TopicScheme("root"), retry);
         await bus.SubscribeAsync("root/+/ack", MessageFamily.Ack, sender.OnAckReceivedAsync, CancellationToken.None);
 

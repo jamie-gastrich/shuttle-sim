@@ -61,7 +61,7 @@ async Task<int> RunMoveAsync(string shuttleId, string toLane)
 
 	await using var bus = new MqttMessageBus(mqtt);
 	await bus.ConnectAsync(CancellationToken.None);
-	var retry = new RetryPolicy(
+	var retry = new RetryPolicyExtensions.RetryPolicy(
 		maxAttempts,
 		TimeSpan.FromMilliseconds(ackTimeoutMs),
 		TimeSpan.FromMilliseconds(backoffMs));
