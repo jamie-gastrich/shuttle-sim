@@ -17,6 +17,9 @@ Open a tier only when you are stuck. Stop reading as soon as the tier gets you m
   caller passes them. That is what makes the tests deterministic and keeps `FleetCore` pure.
 - **`Fail` can happen from three states; `Complete` from one.** A task can fail before a shuttle is
   chosen, while assigned, or while in progress. It can only complete after it is in progress.
+- **"Blank" means `string.IsNullOrWhiteSpace`.** A string of only spaces (`"   "`) is blank, not just
+  `""`. A blank **argument** throws `ArgumentException` (pass the parameter name, for example
+  `nameof(shuttleId)`); a wrong-**state** move throws `TaskRejectedException`. Keep the two apart.
 - **The board is a list plus two checks.** A `List<FleetTask>` keeps insertion order. `Add` rejects a
   duplicate id. `NextQueued` walks from the front for the first task whose state is `Queued`.
 - **Add both projects to `src/ShuttleFleet.slnx`.** `dotnet build` from `src/` builds the solution;
@@ -31,7 +34,8 @@ Open a tier only when you are stuck. Stop reading as soon as the tier gets you m
 
 - Order of work, and why:
 
-  1. `TaskState` — the enum and `ToWireName`. Test the five names with no dependencies.
+  1. `TaskState` — the enum and `ToWireName`. Test the five names with no dependencies. The wire-name
+     test must call `ToWireName` and assert all five strings, underscore included in `in_progress`.
   2. `TaskRejectedException` — one line, then done.
   3. `FleetTask` — fields, constructor guards, then `Assign`, `Start`, `Complete`, `Fail`, then the
      private `EnsureInOrder`. Test each ending before wiring the board.
@@ -43,7 +47,8 @@ Open a tier only when you are stuck. Stop reading as soon as the tier gets you m
   change. `State` starts `Queued`. `AssignedShuttleId` and `FailureReason` start null.
 - **The guards, in order.** Every move first calls `EnsureInOrder(now)`, then checks the state, then
   checks blank inputs (shuttle id for `Assign`, reason for `Fail`). Check the state before the blank
-  input so a wrong-state call is reported as wrong-state.
+  input so a wrong-state call is reported as wrong-state. Blank means `IsNullOrWhiteSpace`, and a
+  blank input throws `ArgumentException`, not `TaskRejectedException`.
 - **`EnsureInOrder`.** Keep a private `DateTime? _lastEventAt`. Reject `now` earlier than it; allow
   equal. Set it at the end of every successful move. This is exactly `Shuttle.EnsureInOrder`.
 - **`NextQueued`.** `_tasks.FirstOrDefault(task => task.State == TaskState.Queued)`. It returns null
@@ -70,6 +75,9 @@ Open a tier only when you are stuck. Stop reading as soon as the tier gets you m
   methods `Assign`, `Start`, `Complete`, `Fail`.
 - `TaskBoard`: `Add`, `TryGet`, `Get`, `NextQueued`, `Count`.
 - Test names are listed in the assignment; the anchored `--list-tests` walk checks all eighteen.
+- The wire-name test must do real work, not just exist: call `TaskStateWire.ToWireName` for all five
+  states and assert `queued`, `assigned`, `in_progress`, `done`, `failed`. A test that only asserts
+  `TaskId`/`ToLane` still satisfies the name walk but fails the lesson's Phase 3b content gate.
 - The exact grep strings: `enum TaskState`, `TaskRejectedException`, `NextQueued`,
   `ProjectReference Include="..\FleetCore\FleetCore.csproj"`, and the purity greps
   (`DateTime\.UtcNow`, `Guid\.NewGuid`, `Npgsql`, `MQTTnet`).

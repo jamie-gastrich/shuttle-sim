@@ -1,6 +1,6 @@
 # Lesson 07: The task and its lifecycle (the first M3 piece)
 
-**Milestone:** M3 (Fleet manager core) · **Language:** C#/.NET 10 · **Prerequisite:** [Lesson 06: The acknowledgement timeout and the retry that closes M2](06-ack-timeout-and-retry.md) · **Decision:** [record 11](../decisions/11-task-lifecycle-and-queue.md)
+**Milestone:** M3 (Fleet manager core) · **Language:** C#/.NET 10 · **Prerequisite:** [Lesson 06: The acknowledgement timeout and the retry that closes M2](06-ack-timeout-and-retry.md) · **Decision:** [record 11](../decisions/11-task-lifecycle-and-queue.md); blank inputs and error types in [record 12](../decisions/12-task-blank-inputs-and-exception-types.md)
 
 **Concepts this assignment requires:**
 
@@ -200,8 +200,9 @@ Read it line by line.
 - `AssignedShuttleId` is null until a shuttle is chosen. It answers "who owns this task?"
 - `FailureReason` is null unless the task fails. It holds words an operator can read.
 
-The constructor refuses a blank id or a blank lane. A task with no name cannot be tracked, and a task
-with nowhere to go is not a task.
+The constructor refuses a blank id or a blank lane. **Blank means `string.IsNullOrWhiteSpace`: an empty
+string and a string of only whitespace, like `"   "`, are both refused.** A task with no name cannot be
+tracked, and a task with nowhere to go is not a task.
 
 Notice what is **not** here. `FleetTask` never calls `DateTime.UtcNow`. It never calls
 `Guid.NewGuid`. The caller passes the id and the time in. That is the rule from record 06: time is an
@@ -258,8 +259,11 @@ two-word state needs one join. The underscore keeps every letter lowercase. A ca
 `inProgress` would mix styles. Record 11 decided this so the dashboard and the WMS do not invent their
 own spelling later.
 
-Now the moves. Each move is one method. It takes `DateTime now`. A wrong call is refused with a named
-exception, `TaskRejectedException` — the same idea as `ShuttleRejectedException`.
+Now the moves. Each move is one method. It takes `DateTime now`. A move from the wrong **state** is
+refused with a named exception, `TaskRejectedException` — the same idea as `ShuttleRejectedException`. A
+blank **input** is a different kind of error: the value handed to the method is bad, so it throws
+`ArgumentException`. Keep the two apart. [Record 12](../decisions/12-task-blank-inputs-and-exception-types.md)
+pins both.
 
 ```csharp
 // src/FleetCore/FleetTask.cs — the guarded moves
@@ -269,7 +273,7 @@ public void Assign(string shuttleId, DateTime now)
     if (State != TaskState.Queued)
         throw new TaskRejectedException($"cannot assign while {State}");
     if (string.IsNullOrWhiteSpace(shuttleId))
-        throw new TaskRejectedException("shuttle id required");
+        throw new ArgumentException("shuttle id required", nameof(shuttleId));
     AssignedShuttleId = shuttleId;
     State = TaskState.Assigned;
     _lastEventAt = now;
@@ -281,7 +285,9 @@ public void Assign(string shuttleId, DateTime now)
 - `EnsureInOrder(now)` refuses a clock that went backwards, exactly like the shuttle.
 - The state check comes first. You can only assign a task that is still waiting. Assign it twice and
   the second call is refused.
-- The shuttle id must not be blank. An assigned task with no shuttle is a lie.
+- The shuttle id must not be blank (empty or only whitespace). An assigned task with no shuttle is a
+  lie. A blank argument throws `ArgumentException`, not `TaskRejectedException`: the input is bad, not
+  the state.
 - On success, two things change: the task remembers its shuttle, and its state becomes `Assigned`.
 
 The next two moves are one step at a time:
@@ -320,7 +326,7 @@ public void Fail(string reason, DateTime now)
     if (State is TaskState.Done or TaskState.Failed)
         throw new TaskRejectedException($"cannot fail while {State}");
     if (string.IsNullOrWhiteSpace(reason))
-        throw new TaskRejectedException("reason required");
+        throw new ArgumentException("reason required", nameof(reason));
     FailureReason = reason;
     State = TaskState.Failed;
     _lastEventAt = now;
@@ -331,7 +337,9 @@ public void Fail(string reason, DateTime now)
   shuttle never starts), or while `InProgress` (the move is rejected, or the shuttle goes silent).
 - A task cannot fail once it is `Done` or already `Failed`. Those two are **terminal**: nothing comes
   after them.
-- The reason must not be blank. A failure with no words is useless to an operator.
+- The reason must not be blank (empty or only whitespace). A failure with no words is useless to an
+  operator. Like the constructor guard, a blank reason is a bad argument, so it throws
+  `ArgumentException`.
 
 A real-world picture: a repair ticket. It can be cancelled before it is given to a mechanic, dropped
 when the mechanic cannot start, or failed mid-repair when the part breaks. Once it is marked fixed or
@@ -433,8 +441,9 @@ A **task record** is one unit of work: an id, a target lane, the time it was cre
 who owns it. The id and the time are passed in, never generated inside, so tests are deterministic.
 
 The **task lifecycle** is five states — queued, assigned, in progress, done, failed — with guarded
-moves. One step forward at a time. Fail from any live state. Done and Failed are terminal. A wrong
-move throws `TaskRejectedException`.
+moves. One step forward at a time. Fail from any live state. Done and Failed are terminal. A move from
+the wrong state throws `TaskRejectedException`; a blank input (empty or only whitespace) throws
+`ArgumentException`.
 
 The **task board** is the pure queue. A list in first-in order, a duplicate check, a lookup by id, and
 `NextQueued()` that hands out the oldest task still waiting. No broker, no database, no clock.
@@ -533,7 +542,7 @@ public sealed class Ticket
         if (State != TicketState.Queued)
             throw new TicketRejectedException($"cannot assign while {State}");
         if (string.IsNullOrWhiteSpace(who))
-            throw new TicketRejectedException("assignee required");
+            throw new ArgumentException("assignee required", nameof(who));
         Assignee = who;
         State = TicketState.Assigned;
     }
@@ -557,7 +566,7 @@ public sealed class Ticket
         if (State is TicketState.Done or TicketState.Failed)
             throw new TicketRejectedException($"cannot fail while {State}");
         if (string.IsNullOrWhiteSpace(reason))
-            throw new TicketRejectedException("reason required");
+            throw new ArgumentException("reason required", nameof(reason));
         FailureReason = reason;
         State = TicketState.Failed;
     }
@@ -646,6 +655,8 @@ Answer these without notes before you start the assignment.
    deterministic?
 5. `Done` and `Failed` are terminal at M3. Which later milestone needs to re-open failed work, and
    what will it have to add to this machine?
+6. A blank shuttle id throws `ArgumentException`, but assigning a task that is already `Assigned`
+   throws `TaskRejectedException`. Why two exception types? Say what each one tells the caller.
 
 ---
 
@@ -686,19 +697,27 @@ task queue. SQL persistence and the assignment policy are the next lessons; do n
 4. **`src/FleetCore/TaskRejectedException.cs`** — a `sealed` exception type with one constructor
    taking a message, exactly like `ShuttleRejectedException`.
 
-5. **`src/FleetCore/FleetTask.cs`** — the guarded task object:
+5. **`src/FleetCore/FleetTask.cs`** — the guarded task object. **"Blank" means
+   `string.IsNullOrWhiteSpace(...)`: the empty string `""` and a whitespace-only string such as `"   "`
+   both count as blank.** A blank *input* is a bad argument, so it throws `ArgumentException`; the
+   constructor also includes the parameter name (`new ArgumentException("TaskId cannot be empty.",
+   nameof(taskId))`). That is a different error category from a wrong *state* move, which throws
+   `TaskRejectedException`; [record 12](../decisions/12-task-blank-inputs-and-exception-types.md)
+   pins both:
    - constructor `FleetTask(string taskId, string toLane, DateTime createdAt)`; reject a blank
      `taskId` or `toLane` with `ArgumentException` (parameter name included);
    - read-only `TaskId`, `ToLane`, `CreatedAt`; `TaskState State { get; private set; }` starting at
      `Queued`; `string? AssignedShuttleId`; `string? FailureReason`;
-   - `Assign(string shuttleId, DateTime now)` — only from `Queued`; reject a blank `shuttleId`;
+   - `Assign(string shuttleId, DateTime now)` — only from `Queued`; reject a blank `shuttleId` with
+     `ArgumentException`;
    - `Start(DateTime now)` — only from `Assigned`;
    - `Complete(DateTime now)` — only from `InProgress`;
    - `Fail(string reason, DateTime now)` — from `Queued`, `Assigned`, or `InProgress`; reject a blank
-     `reason`; **not** from `Done` or `Failed`;
+     `reason` with `ArgumentException`; **not** from `Done` or `Failed`;
    - every move rejects a `now` earlier than the previous move's timestamp (a private
      `_lastEventAt`, exactly like `Shuttle`); equal timestamps are allowed;
-   - a wrong move throws `TaskRejectedException` with a message that names the current state.
+   - a move from the wrong state throws `TaskRejectedException` with a message that names the current
+     state.
 
 6. **`src/FleetCore/TaskBoard.cs`** — the pure queue:
    - `FleetTask Add(FleetTask task)` — reject a duplicate `TaskId` with `TaskRejectedException`; keep
@@ -723,7 +742,10 @@ task queue. SQL persistence and the assignment policy are the next lessons; do n
    - `Assign_with_a_blank_shuttle_is_rejected`;
    - `Fail_with_a_blank_reason_is_rejected`;
    - `A_move_with_a_timestamp_before_the_previous_one_is_rejected`;
-   - `Task_wire_names_match_record_11`;
+   - `Task_wire_names_match_record_11` — **must call `TaskStateWire.ToWireName` for all five states and
+     assert the exact wire strings `queued`, `assigned`, `in_progress` (mind the underscore), `done`,
+     and `failed`.** Asserting `TaskId` or `ToLane` does not satisfy this test — copy the shape of
+     `src/ShuttleCore.Tests/WireNamesTests.cs`, which does the same for the shuttle states;
    - `Board_rejects_a_duplicate_task_id`;
    - `Board_hands_out_the_oldest_queued_task_first`;
    - `Board_next_queued_skips_assigned_and_finished_tasks`;
@@ -793,6 +815,16 @@ for t in Assign_from_queued_enters_assigned \
          Board_get_returns_the_task_by_id; do
   grep -qE "\\.$t\$" "$L" || echo "missing test: $t"; done                         # nothing
 rm -f "$L"
+
+# Phase 3b — the wire-name test must check the names, not just exist.
+# The name walk above only proves the test is listed; this reads its body.
+W=$(mktemp)
+awk '/void Task_wire_names_match_record_11\(\)/{inside=1} inside{print} inside && /^    \}$/{exit}' \
+  FleetCore.Tests/TaskLifecycleTests.cs > "$W"
+grep -q 'ToWireName' "$W" || echo "wire-name test does not call ToWireName"         # nothing
+for name in queued assigned in_progress done failed; do
+  grep -q "\"$name\"" "$W" || echo "wire-name test does not assert: $name"; done     # nothing
+rm -f "$W"
 cd ..
 ```
 

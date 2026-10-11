@@ -27,7 +27,7 @@ public sealed class FleetTask
         if (State != TaskState.Queued)
             throw new TaskRejectedException("Cannot assign a task that is not Queued.");
         if (string.IsNullOrWhiteSpace(shuttleId))
-            throw new ArgumentException(nameof(shuttleId), "ShuttleId cannot be empty.");
+            throw new ArgumentException("ShuttleId cannot be empty.", nameof(shuttleId));
         AssignedShuttleId = shuttleId;
         State = TaskState.Assigned;
         _lastEventAt = now;
@@ -59,7 +59,7 @@ public sealed class FleetTask
         if (State == TaskState.Done || State == TaskState.Failed)
             throw new TaskRejectedException("Cannot fail a task that is already Done or Failed.");
         if (string.IsNullOrWhiteSpace(reason))
-            throw new ArgumentException(nameof(reason), "Reason cannot be empty.");
+            throw new ArgumentException("Reason cannot be empty.", nameof(reason));
         State = TaskState.Failed;
         FailureReason = reason;
         _lastEventAt = now;
