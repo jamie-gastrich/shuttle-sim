@@ -144,13 +144,17 @@ public class TaskLifecycleTests
     [Fact]
     public void Task_wire_names_match_record_11()
     {
-        var task = new FleetTask("task-1", "A01-L02", Start);
-        task.Assign("SH-01", Start);
-        task.Start(Start.AddSeconds(1));
-        task.Complete(Start.AddSeconds(2));
+        var queued = TaskStateWire.ToWireName(TaskState.Queued);
+        var assigned = TaskStateWire.ToWireName(TaskState.Assigned);
+        var in_progress = TaskStateWire.ToWireName(TaskState.InProgress);
+        var done = TaskStateWire.ToWireName(TaskState.Done);
+        var failed = TaskStateWire.ToWireName(TaskState.Failed);
 
-        Assert.Equal("task-1", task.TaskId);
-        Assert.Equal("A01-L02", task.ToLane);
+        Assert.Equal("queued", queued);
+        Assert.Equal("assigned", assigned);
+        Assert.Equal("in_progress", in_progress);
+        Assert.Equal("done", done);
+        Assert.Equal("failed", failed);
     }
 
     [Fact]

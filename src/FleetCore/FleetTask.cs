@@ -5,10 +5,10 @@ public sealed class FleetTask
     private DateTime? _lastEventAt;
     public FleetTask(string taskId, string toLane, DateTime createdAt)
     {
-        if (string.IsNullOrEmpty(taskId))
-            throw new ArgumentException(nameof(TaskId), "TaskId cannot be empty.");
-        if (string.IsNullOrEmpty(toLane))
-            throw new ArgumentException(nameof(ToLane), "ToLane cannot be empty.");
+        if (string.IsNullOrWhiteSpace(taskId))
+            throw new ArgumentException("TaskId cannot be empty.", nameof(taskId));
+        if (string.IsNullOrWhiteSpace(toLane))
+            throw new ArgumentException("ToLane cannot be empty.", nameof(toLane));
 
         TaskId = taskId;
         ToLane = toLane;
@@ -26,7 +26,7 @@ public sealed class FleetTask
         EnsureInOrder(now);
         if (State != TaskState.Queued)
             throw new TaskRejectedException("Cannot assign a task that is not Queued.");
-        if (string.IsNullOrEmpty(shuttleId))
+        if (string.IsNullOrWhiteSpace(shuttleId))
             throw new ArgumentException(nameof(shuttleId), "ShuttleId cannot be empty.");
         AssignedShuttleId = shuttleId;
         State = TaskState.Assigned;
@@ -58,11 +58,10 @@ public sealed class FleetTask
         EnsureInOrder(now);
         if (State == TaskState.Done || State == TaskState.Failed)
             throw new TaskRejectedException("Cannot fail a task that is already Done or Failed.");
-        if (string.IsNullOrEmpty(reason))
+        if (string.IsNullOrWhiteSpace(reason))
             throw new ArgumentException(nameof(reason), "Reason cannot be empty.");
         State = TaskState.Failed;
         FailureReason = reason;
-        _lastEventAt = now;
         _lastEventAt = now;
     }
 
