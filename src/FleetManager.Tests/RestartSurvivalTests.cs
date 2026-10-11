@@ -96,40 +96,6 @@ public class RestartSurvivalTests
         return builder.ConnectionString;
     }
 
-    private static async Task EnsureDatabaseIsRunningAsync()
-    {
-        for (var attempt = 1; attempt <= 20; attempt++)
-        {
-            try
-            {
-                await using var connection = new NpgsqlConnection(ConnectionString);
-                await connection.OpenAsync();
-                return;
-            }
-            catch (NpgsqlException)
-            {
-                if (attempt == 20)
-                    throw;
-
-                await Task.Delay(1000);
-            }
-        }
-    }
-
-    private static string FindRepoRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null)
-        {
-            if (File.Exists(Path.Combine(directory.FullName, "docker", "compose.yml")))
-                return directory.FullName;
-
-            directory = directory.Parent;
-        }
-
-        return Directory.GetCurrentDirectory();
-    }
-
     private static async Task ResetDatabaseAsync()
     {
         await using var connection = new NpgsqlConnection(ConnectionString);

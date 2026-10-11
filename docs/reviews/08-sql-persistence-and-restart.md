@@ -293,3 +293,213 @@ This slice is the second M3 piece and it is the right shape: a domain-owned repo
 - Throwaway `/tmp/opencode/rev08` (and its mutation copies) deleted. `/tmp/opencode/mqttinspect` left as found.
 - `dotnet build-server shutdown` run. The pre-existing VS Code `ProjectSystem.Server.BuildHost` and MSBuild `nodeReuse` workers were present before the review and are not mine.
 - No file under `src/` was modified. `docs/reviews/08-sql-persistence-and-restart.md` is the only file this review adds; `README.md` is untouched because the verdict is not-yet.
+
+---
+
+# Re-review (round 2) — 2026-10-11, commit `0da93e7`
+
+**Date:** 2026-10-11
+**Reviewed:** commit `0da93e7` ("M3: feat: update Dockerfile and tests to exclude integration tests from the fresh-container gate") on top of `3ab4a7d` (test moved to `FleetManager.Tests`, config-driven connection string, auto-start helper) and `6929902` (double-space cleanup). Working tree clean, HEAD `0da93e7` at review start.
+**The professor's L1/L2 fixes are present and committed:** `0da93e7` carries the lesson/hints edits and [decision record 14](../../decisions/14-db-test-gate-and-config.md) (142 lines) — not just working-copy changes.
+**Verdict change: not yet → pass with changes.** Every functional gate from round 1 is green: the fresh container exits 0 with the integration test excluded, the DB test truly ran and asserted against the live database, all six mutations go red, and the pure/non-pure project split is restored. One should-fix remains (dead auto-start scaffolding in the test file) and one lesson defect (Phase 7's docker grep is over-broad) — both small, neither blocking.
+
+---
+
+## Per-finding grades
+
+| Round-1 finding | This round | Evidence |
+|---|---|---|
+| **B1 (blocker)** — DB-backed test broke the fresh container | **cleared** | `docker run --rm shuttle-fleet-build` exit 0, 7 `Passed!`; reproducible on a `--no-cache` rebuild (`shuttle-fleet-build-fresh`, exit 0, 7 `Passed!`). `FleetManager.Tests` shows **5** tests in the container — the trait-filtered suite excludes only the integration test, which is the record-14 §5 proof that the filter works |
+| **S1** — DB test in pure project | **cleared** | `RestartSurvivalTests.cs` lives in `src/FleetManager.Tests/`; `FleetCore.Tests.csproj` references only `FleetCore`; `grep -c 'FleetManager' src/FleetCore.Tests/FleetCore.Tests.csproj` prints 0 |
+| **S2** — rename churn + double spaces | **cleared (residue noted)** | no `CancellationToken  x` double spaces anywhere in `src/`; separate whitespace commit `6929902` exists. The `ct`→`cancellationToken` rename itself is still bundled in `009a2cf` history — not worth rewriting history, but the bisection note stands |
+| **C1** — `timestamptz` µs vs .NET ticks | **cleared** | `FleetTask` truncates to microsecond precision in **both** constructors (`ToMicrosecondPrecision`, `FleetTask.cs:87-88`). The test deliberately uses `start.AddTicks(7)` (700 ns). Verified: Postgres rounds `…00.0000007+00` up to `…00.000001` when not truncated, and removing the truncation turns the test red (mutation M5) |
+| **C2** — duplicated DDL, hard-coded port/credentials | **cleared** | `ResetDatabaseAsync` no longer re-declares DDL (plain `DELETE`; table ensured by the repo first). `BuildConnectionString` follows record 14 §6 exactly: `SHUTTLE_DB_CONNECTION_STRING` whole, else `SHUTTLE_DB_HOST` / `DB_HOST_PORT` / `SHUTTLE_DB_USER` / `SHUTTLE_DB_PASSWORD` / `SHUTTLE_DB_NAME` with local defaults. A non-integer `DB_HOST_PORT` fails fast (verified) |
+| **L1 / L2 (lesson defects)** | **cleared** | lesson now requires the trait, the filtered CMD, the config-driven connection string, and `FleetManager.Tests` placement; record 14 documents the mechanism and the two-gate proof |
+| **New S3 (should-fix)** — dead auto-start scaffolding | **open** | see Findings |
+| **New L3 (lesson defect)** — Phase 7 grep over-broad | **open** | see Findings |
+| **New C3 (consider)** — test reads before it resets | **open** | see Findings |
+
+---
+
+## Commands run, verbatim key output
+
+Run from repo root unless stated. Exit codes read directly. Mutations ran against a throwaway `git archive HEAD` copy at `/tmp/opencode/rev08b`, deleted afterward; the DB was stopped before the container runs and started only for the with-DB phases.
+
+### Environment
+
+```
+$ dotnet --version        → 10.0.112
+$ docker --version        → Docker version 29.8.1
+$ docker compose -f docker/compose.yml ps → (nothing up at review start; round-1 note that the owner's container had been left running is now moot)
+```
+
+### B1 — the fresh-container gate is green, twice
+
+```
+$ docker build -f docker/Dockerfile.build -t shuttle-fleet-build .     exit 0 (layers from the owner's rebuild)
+$ docker run --rm shuttle-fleet-build                                  exit 0
+   Passed!  … 22 … ShuttleCore.Tests.dll       Passed!  … 18 … FleetCore.Tests.dll
+   Passed!  …  4 … Contracts.Tests.dll         Passed!  …  5 … ShuttleSim.Tests.dll
+   Passed!  …  8 … Messaging.Tests.dll         Passed!  …  5 … FleetManager.Tests.dll
+   Passed!  …  2 … MqttMessaging.Tests.dll
+$ docker build --no-cache -f docker/Dockerfile.build -t shuttle-fleet-build-fresh .   exit 0
+$ docker run --rm shuttle-fleet-build-fresh                             exit 0, same 7 "Passed!" lines
+```
+
+A cache-busting rebuild was run so the green container is not the owner's cached layers. No database exists in that container; `FleetManager.Tests` passing 5/6 there is the filter working — had the filter been wrong, the DB test would have run and failed the container (exit 1). This is the record-14 §5 "container half" of the gate.
+
+### The DB test TRULY ran and asserted (not fake green)
+
+```
+$ docker compose -f docker/compose.yml up -d database                   exit 0, accepting connections
+$ cd src
+$ dotnet test FleetManager.Tests/FleetManager.Tests.csproj -v m --logger "console;verbosity=detailed" --filter "Category=Integration"
+   … FleetManager.Tests -> …/FleetManager.Tests.dll                     ← rebuilt now, not a stale binary
+   Passed FleetManager.Tests.RestartSurvivalTests.State_survives_restart_after_persisting_tasks [494 ms]
+   Passed: 1
+   exit 0
+```
+
+The printout is `Passed <name>`, not `Skipped <name>`, and the same log shows the test project being built — so the proof ran on the current code and asserted. Rows read back with `psql` are the real six tasks in FIFO order with wire-name states and preserved nulls:
+
+```
+ task_id      | to_lane | created_at | state | assigned_shuttle_id | failure_reason
+ task-queued-a    | A01-L01 | 2026-01-01 00:00:00+00 | queued        |                     |
+ task-queued-b    | A01-L02 | 2026-01-01 00:01:00+00 | queued        |                     |
+ task-assigned    | A01-L03 | 2026-01-01 00:02:00+00 | assigned    | SH-01               |
+ task-in-progress | A01-L04 | 2026-01-01 00:03:00+00 | in_progress | SH-02               |
+ task-done        | A01-L05 | 2026-01-01 00:04:00+00 | done        | SH-03               |
+ task-failed      | A01-L06 | 2026-01-01 00:05:00+00 | failed      |                     | rack empty
+(6 rows)
+```
+
+### Whole suite with the database up
+
+```
+$ cd src && dotnet test ShuttleFleet.slnx -v m                          exit 0
+   Passed! 7 lines: 4 / 18 / 8 / 2 / 22 / 6 / 5  = 65 tests
+```
+
+### Lesson acceptance phases (verbatim where possible)
+
+Phase 1 (interface, `InternalsVisibleTo`, `internal FleetTask`): all exit 0.
+Phase 2 (purity): `grep -rniE 'Npgsql|Postgres|…' src/FleetCore` exit 1 (no match); `grep -c 'ProjectReference\|PackageReference' src/FleetCore/FleetCore.csproj` prints 0; `grep -c 'FleetManager' src/FleetCore.Tests/FleetCore.Tests.csproj` prints 0.
+Phase 3: `<PackageReference Include="Npgsql" Version="8.0.6" />` in `FleetManager.csproj`, exit 0.
+Phase 4 (pure suite, container command shape, DB down): RC 0, 7 `Passed!`, no `Failed!`.
+Phase 5 (DB-test-ran proof): RC 0, exact line `Passed FleetManager.Tests.RestartSurvivalTests.State_survives_restart_after_persisting_tasks`, `Passed: 1`.
+Phase 6 (container): exit 0 (above, including no-cache).
+Phase 7: trait present (exit 0); `--filter`/`Category!=Integration` in `docker/Dockerfile.build` (exit 0); **but** `grep -qE 'Process\.Start|"docker"' src/FleetManager.Tests/RestartSurvivalTests.cs` prints `FAIL: test must not start docker` — see L3. The test never starts docker (`Process.Start` is absent; the match is the string `"docker"` inside the dead `FindRepoRoot` helper).
+Phase 8 (contract): v1 `Version: 1`, v2 `Version: 2`, no `v3.md`; `grep -rniE 'FleetTask|TaskState' src/Contracts` no match.
+
+### Connection-string configuration (C2, verified behaviorally)
+
+```
+$ SHUTTLE_DB_CONNECTION_STRING="Host=127.0.0.1;Port=5432;Username=shuttle;Password=shuttle;Database=shuttle" SHUTTLE_DB_HOST="127.0.0.99" dotnet test FleetManager.Tests/… -v q --filter "Category=Integration"
+   exit 0, Passed 1/1        ← the whole-string override wins over a bogus host
+$ DB_HOST_PORT="not-a-port" dotnet test … -v m --filter "Category=Integration"
+   exit 1 … System.InvalidOperationException : DB_HOST_PORT must be a valid integer.
+```
+
+### Regression checks
+
+M1 demo: `dotnet run --project ShuttleSim/ShuttleSim.csproj` exit 0, 7 `ShuttleId` status lines, `PLT-001` moved `A01-L01` → `A02-L02`. Manager start: `dotnet run --project FleetManager/FleetManager.csproj` exit 0 with `Fleet Manager Coming Online`. M2 (review 06) logging intact: `attempt {n} of {max} for command {id}` in `ReliableCommandSender.cs:66`; `listening`/`handled`/`published` lines in `ShuttleSim/Program.cs`. Contract v1/v2 untouched.
+
+### Mutations (throwaway `git archive HEAD` copy, `/tmp/opencode/rev08b`, deleted after)
+
+Baseline of the integration test in the copy: `Passed! 1/1` (exit 0). Each mutation turned it red; the DB was cleaned before each run so a failed mutation could not pollute the next; sources were restored and verified identical to the repo after each mutation.
+
+| Mutation | What changed | Result |
+|---|---|---|
+| M1 wrong load order | `ORDER BY created_at ASC` → `DESC` | `Assert.Equal() Failure: Collections differ` — red |
+| M2 mangled state on load | `"in_progress" => TaskState.Assigned` | `Assert.Equal() Failure: Values differ` — red |
+| M3 wrong saved column | `state` bound to `task.ToLane` | `System.ArgumentException : Unknown task state wire name 'A01-L01'` — red |
+| M4 field fidelity | `failure_reason` dropped on load | `Assert.Equal() Failure: Strings differ` — red |
+| M5 timestamp truncation removed (C1) | `ToMicrosecondPrecision` returns `value` | `Assert.Equal() Failure: Values differ` — red |
+| M6 field fidelity | `assigned_shuttle_id` dropped on load | `Assert.Equal() Failure: Strings differ` — red |
+| Restore | — | `Passed! 1/1` green again |
+
+The restart proof is load-bearing for ordering, state mapping, column mapping, both nullable-field round trips, and the C1 precision fix — none of it is vacuous.
+
+### Read-before-reset fragility (C3, demonstrated)
+
+Inserted a row with `state='legacy_state'` (a state the current wire mapping cannot parse — the shape of a row from an older schema or a broken run), then ran the **unmutated** test: it fails with `System.ArgumentException : Unknown task state wire name 'legacy_state'.` before its own reset can clear the table. The test's first `LoadAllAsync` exists only to ensure the table exists, but it parses every row first.
+
+---
+
+## Findings
+
+**1. SHOULD-FIX S3 — dead auto-start scaffolding left in the test.** `RestartSurvivalTests.cs:99-131` still contains `EnsureDatabaseIsRunningAsync` (a 20-attempt × 1 s retry poller with hard-coded numbers) and `FindRepoRoot` (walks directories looking for `docker/compose.yml`) — the remains of the removed `StartDatabaseAsync` from the B1 first-fix attempt. Nothing calls either method. They trip the lesson's Phase 7 acceptance grep, which prints `FAIL: test must not start docker` for a test that never starts docker (L3). Delete both methods. Why it matters for a real shuttle system: record 14 §2 rejects auto-starting Docker from a test permanently and explains why; leaving the scaffolding in invites a future developer to re-enable a mechanism that cannot work in the build image and that hides what actually runs in the DB-less gate.
+
+**2. LESSON DEFECT L3 — Phase 7's docker grep tests word presence, not behavior.** `grep -qE 'Process\.Start|"docker"'` matches any quoted literal `"docker"` in the source, including a path string. The check should target real invocations (`Process\.Start`, `docker compose`, `docker run`, or the removed helper names). As written, the acceptance command is red against a correct implementation. The behavior is verified instead by the container gate itself: the test cannot run in the container (no DB), and the with-DB run proves it executes.
+
+**3. CONSIDER C3 — the test reads the table before it clears it.** Reproduced above. This becomes real when lesson 09/M5 start writing different row shapes (e.g. assignment fields) into the same database the developer keeps between lessons. The reset should ensure-then-delete without parsing row contents — e.g. a bare `CREATE TABLE IF NOT EXISTS` plus `DELETE`, or `TRUNCATE`.
+
+**4. CONSIDER C4 (design note) — the precision fix lives in the domain model.** `FleetTask.ToMicrosecondPrecision` truncates in both constructors. It is the right call (single place, invariant holds in memory and in storage, mutation-proven), but it embeds a storage-precision rule in the domain. Write it down as a domain invariant ("`CreatedAt` is UTC at microsecond precision, matching the database") so a later change to `timestamptz` precision or a move to a different store re-triggers the decision. The round-1 worry that `DateTime.UtcNow`-created tasks would not reload tick-equal is resolved: both constructors truncate, so save and load agree.
+
+**Concepts check:** the lesson keeps its 3-concept cap (repository abstraction, persistence shape/mapping, reload/restart survival), each taught in its own section; the test-gate mechanism is explicitly declared an assignment requirement, not a concept, and is fully specified in record 14. No concept in the list is untaught. The only defect is L3's grep.
+
+---
+
+## Explain-it questions — before the next lesson
+
+Round-1 questions, with their status:
+
+1. **Repository split** — still ask. The code now embodies it (`IFleetTaskRepository` in pure `FleetCore`, Npgsql only in `FleetManager`); say what specifically breaks if `FleetCore` takes an Npgsql reference or implements `Save` itself.
+2. **Internal hydration + `InternalsVisibleTo`** — still ask; unchanged from round 1, and the attribute now names exactly the assembly that owns the persistence implementation.
+3. **Load ordering + `task_id` tie-breaker** — still ask; mutation M1 proves the ordering is load-bearing.
+4. **`timestamptz` precision vs ticks** — **now answered in code** (µs truncation, `AddTicks(7)` test, mutation M5). Re-ask as: why does the domain truncate, and what does `start.AddTicks(7)` prove that whole-second values did not?
+
+New:
+
+5. Why is `[Trait("Category","Integration")]` + container filter a two-gate proof instead of a runtime skip? Why would "skipped everywhere" be a fake green?
+6. `BuildConnectionString`: walk the precedence and the fail-fast port parse. Why does `SHUTTLE_DB_CONNECTION_STRING` win over the parts?
+7. The dead helpers: what were `EnsureDatabaseIsRunningAsync`/`FindRepoRoot` for, why must they go, and what do they do to the Phase 7 grep?
+8. The test loads before it resets. Walk the ordering and say why a stale row breaks it (C3).
+9. `SaveAllAsync` upserts with `ON CONFLICT (task_id) DO UPDATE` inside one transaction — what does the transaction buy, and what is the in-memory board's state if `CommitAsync` fails?
+
+### Lines or blocks that look unclear, copied, or unexplained
+
+- `src/FleetManager.Tests/RestartSurvivalTests.cs:99-131` — the two unused helpers; be able to tell the B1 first-fix story (record 14 §2) and why they must be deleted.
+- `src/FleetCore/FleetTask.cs:87-88` — `ToMicrosecondPrecision` and the `% 10` math; say why both constructors truncate.
+- `src/FleetManager/PostgresFleetTaskRepository.cs:28-34` — the `ON CONFLICT` upsert; say why an upsert rather than plain `INSERT` is needed to re-save a board after restart.
+
+---
+
+## Revisit list
+
+- **Integration-test fixture hygiene.** A DB-backed test must be able to reset its own fixture without first parsing whatever is in the table (C3).
+- **Delete the scaffolding when a design is rejected.** Record 14 says auto-start is permanently rejected; the half-removed attempt still sits in the file (S3).
+- **Acceptance greps must test behavior.** `grep '"docker"'` proves the word appears, not that the test starts Docker (L3).
+- Round-1 items still stand: infra-dependent tests are not unit tests; project placement carries design meaning (now fixed); one concept per commit.
+- **Next:** lesson 09 — assignment to several shuttles and the whole-M3 done-when (three shuttles finish a queue, restart end-to-end). Its DB-backed tests reuse exactly this trait/filter/two-gate pattern.
+
+---
+
+## End-product check
+
+This slice is now the right shape and the gates are honest: the DB-less container proves the pure suite (7 `Passed!`, integration test excluded), the with-DB phase proves the restart test executed and asserted (`Passed`/`Passed: 1`), psql shows real rows with wire-name states and preserved nulls, and six mutations prove the round trip is load-bearing. What remains is 30 lines of dead code plus one over-broad grep — paper cuts, not structural risk. The structural risk that carries forward is C3 (schema evolution on the developer's persistent database between lessons) and the need to keep the µs-precision invariant documented. The M3 done-when is still not closed: multi-shuttle assignment and the end-to-end three-shuttle/restart proof are lesson 09. **M3 stays in progress.**
+
+---
+
+## README
+
+**Unchanged.** The verdict is **pass with changes** (S3 open), and AGENTS.md changes the milestone table only on a passing review. The M3 row stays `in progress`, which it would also do on a clean pass — lesson 09 owns multi-shuttle assignment and the whole-M3 done-when. When S3 clears, the M3 verification note should be extended with the persistence proof: fresh container exit 0 with `--filter Category!=Integration` (7 `Passed!`), the with-DB run `Passed FleetManager.Tests.RestartSurvivalTests.State_survives_restart_after_persisting_tasks`, and the six mutations.
+
+---
+
+## What the owner must do next
+
+1. Delete `EnsureDatabaseIsRunningAsync` and `FindRepoRoot` from `src/FleetManager.Tests/RestartSurvivalTests.cs` (S3) and re-run the lesson Phase 7 — it should print `OK: test does not start docker`.
+2. Professor: tighten the Phase 7 grep (L3).
+3. Optionally fix C3 (ensure-then-delete in the test reset).
+4. Answer the explain-it questions out loud.
+
+---
+
+## Cleanup (round 2)
+
+- `docker compose -f docker/compose.yml down` run after the DB phases; `docker ps` shows no shuttle-fleet containers and the `shuttle-fleet_default` network is gone.
+- No-cache image `shuttle-fleet-build-fresh` deleted; the pre-existing `shuttle-fleet-build` tag left as found.
+- Throwaway `/tmp/opencode/rev08b` and this round's scratch files deleted; `/tmp/opencode/mqttinspect` left as found.
+- `dotnet build-server shutdown` run.
+- No file under `src/` was modified; the repo working tree is clean. `docs/reviews/08-sql-persistence-and-restart.md` is extended and `README.md` is untouched because the verdict is pass with changes.
