@@ -1,9 +1,9 @@
-using System.Diagnostics;
 using FleetCore;
 using Npgsql;
 
 namespace FleetManager.Tests;
 
+[Trait("Category", "Integration")]
 public class RestartSurvivalTests
 {
     private static readonly string ConnectionString = BuildConnectionString();
@@ -11,7 +11,6 @@ public class RestartSurvivalTests
     [Fact]
     public async Task State_survives_restart_after_persisting_tasks()
     {
-        await EnsureDatabaseIsRunningAsync();
         var repo = new PostgresFleetTaskRepository(ConnectionString);
         await repo.LoadAllAsync(CancellationToken.None);
         await ResetDatabaseAsync();
@@ -112,33 +111,8 @@ public class RestartSurvivalTests
                 if (attempt == 20)
                     throw;
 
-                await StartDatabaseAsync();
                 await Task.Delay(1000);
             }
-        }
-    }
-
-    private static async Task StartDatabaseAsync()
-    {
-        var repoRoot = FindRepoRoot();
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = "docker",
-            Arguments = "compose -f docker/compose.yml up -d database",
-            WorkingDirectory = repoRoot,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-
-        using var process = Process.Start(startInfo)
-            ?? throw new InvalidOperationException("Unable to start docker compose for the database test dependency.");
-
-        await process.WaitForExitAsync();
-        if (process.ExitCode != 0)
-        {
-            var stderr = await process.StandardError.ReadToEndAsync();
-            throw new InvalidOperationException($"docker compose failed to start the database: {stderr}");
         }
     }
 

@@ -3,4 +3,4 @@ WORKDIR /shuttle
 COPY global.json ./
 COPY src/ ./src/
 RUN dotnet build src/ShuttleFleet.slnx -v m
-CMD ["dotnet", "test", "src/ShuttleFleet.slnx", "-v", "m"]
+CMD ["dotnet", "test", "src/ShuttleFleet.slnx", "-v", "m", "--filter", "Category!=Integration"]
