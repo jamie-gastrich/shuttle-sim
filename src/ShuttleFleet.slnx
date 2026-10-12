@@ -13,5 +13,7 @@
   <Project Path="ShuttleSim.Tests/ShuttleSim.Tests.csproj" />
   <Project Path="FleetCore/FleetCore.csproj" />
   <Project Path="FleetCore.Tests/FleetCore.Tests.csproj" />
+  <Project Path="TrafficCore.Tests/TrafficCore.Tests.csproj" />
+  <Project Path="TrafficCore/TrafficCore.csproj" />
 
 </Solution>
