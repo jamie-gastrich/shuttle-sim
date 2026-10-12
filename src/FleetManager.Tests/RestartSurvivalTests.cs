@@ -1,19 +1,17 @@
 using FleetCore;
-using Npgsql;
 
 namespace FleetManager.Tests;
 
 [Trait("Category", "Integration")]
+[Collection("Database")]
 public class RestartSurvivalTests
 {
-    private static readonly string ConnectionString = BuildConnectionString();
-
     [Fact]
     public async Task State_survives_restart_after_persisting_tasks()
     {
-        var repo = new PostgresFleetTaskRepository(ConnectionString);
-        await repo.LoadAllAsync(CancellationToken.None);
-        await ResetDatabaseAsync();
+        var cancellationToken = CancellationToken.None;
+        var repo = new PostgresFleetTaskRepository(TestDatabase.BuildConnectionString());
+        await TestDatabase.ResetAsync(repo, cancellationToken);
 
         var start = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
@@ -37,9 +35,9 @@ public class RestartSurvivalTests
 
         var expected = new[] { queuedA, queuedB, assigned, inProgress, done, failed };
 
-        await repo.SaveAllAsync(expected, CancellationToken.None);
+        await repo.SaveAllAsync(expected, cancellationToken);
 
-        var reloaded = (await repo.LoadAllAsync(CancellationToken.None)).ToList();
+        var reloaded = (await repo.LoadAllAsync(cancellationToken)).ToList();
         var boardAfterRestart = new TaskBoard();
         foreach (var task in reloaded)
             boardAfterRestart.Add(task);
@@ -68,42 +66,5 @@ public class RestartSurvivalTests
 
         Assert.Equal("task-queued-a", boardAfterRestart.NextQueued()!.TaskId);
         Assert.Equal("task-queued-b", boardAfterRestart.Get("task-queued-b").TaskId);
-    }
-
-    private static string BuildConnectionString()
-    {
-        var configuredConnectionString = Environment.GetEnvironmentVariable("SHUTTLE_DB_CONNECTION_STRING");
-        if (!string.IsNullOrWhiteSpace(configuredConnectionString))
-            return configuredConnectionString;
-
-        var builder = new NpgsqlConnectionStringBuilder
-        {
-            Host = Environment.GetEnvironmentVariable("SHUTTLE_DB_HOST") ?? "127.0.0.1",
-            Username = Environment.GetEnvironmentVariable("SHUTTLE_DB_USER") ?? "shuttle",
-            Password = Environment.GetEnvironmentVariable("SHUTTLE_DB_PASSWORD") ?? "shuttle",
-            Database = Environment.GetEnvironmentVariable("SHUTTLE_DB_NAME") ?? "shuttle",
-        };
-
-        var configuredPort = Environment.GetEnvironmentVariable("DB_HOST_PORT");
-        if (!string.IsNullOrWhiteSpace(configuredPort))
-        {
-            if (!int.TryParse(configuredPort, out var port))
-                throw new InvalidOperationException("DB_HOST_PORT must be a valid integer.");
-
-            builder.Port = port;
-        }
-
-        return builder.ConnectionString;
-    }
-
-    private static async Task ResetDatabaseAsync()
-    {
-        await using var connection = new NpgsqlConnection(ConnectionString);
-        await connection.OpenAsync();
-
-        await using (var deleteCommand = new NpgsqlCommand("DELETE FROM fleet_tasks", connection))
-        {
-            await deleteCommand.ExecuteNonQueryAsync();
-        }
     }
 }
