@@ -22,6 +22,8 @@
     <ProjectReference Include="..\FleetManager\FleetManager.csproj" />
     <ProjectReference Include="..\Contracts\Contracts.csproj" />
     <ProjectReference Include="..\Messaging\Messaging.csproj" />
+    <ProjectReference Include="..\TrafficCore\TrafficCore.csproj" />
+    <ProjectReference Include="..\ShuttleCore\ShuttleCore.csproj" />
   </ItemGroup>
 
 </Project>

@@ -20,6 +20,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\FleetCore\FleetCore.csproj" />
+    <ProjectReference Include="..\TrafficCore\TrafficCore.csproj" />
+    <ProjectReference Include="..\ShuttleCore\ShuttleCore.csproj" />
+    <ProjectReference Include="..\FleetManager\FleetManager.csproj" />
   </ItemGroup>
 
 </Project>
