@@ -21,8 +21,10 @@ public class TrackTests
         var track = new Track(rack);
 
         var route = track.Route("A01-L01", "A01-L02");
+        var crossAisleRoute = track.Route("A01-L02", "A02-L01");
 
         Assert.Equal(new[] { "A01-L01", "A01-L02" }, route);
+        Assert.Equal(new[] { "A01-L02", "A02-L01" }, crossAisleRoute);
     }
 
     [Fact]
