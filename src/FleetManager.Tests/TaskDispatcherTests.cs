@@ -29,7 +29,6 @@ public class TaskDispatcherTests
     [Fact]
     public async Task AssignNextAsync_returns_null_when_nothing_is_queued()
     {
-        // Arrange
         var board = new TaskBoard();
         var repository = new InMemoryFleetTaskRepository();
         var dispatcher = new TaskDispatcher(board, repository);
@@ -43,7 +42,6 @@ public class TaskDispatcherTests
     [Fact]
     public async Task A_rejected_transition_throws_and_saves_nothing()
     {
-        // Arrange
         var board = new TaskBoard();
         var repository = new InMemoryFleetTaskRepository();
         var dispatcher = new TaskDispatcher(board, repository);
@@ -62,7 +60,6 @@ public class TaskDispatcherTests
     [Fact]
     public async Task Round_robin_order_assigns_shuttles_in_turn()
     {
-        // Arrange
         var board = new TaskBoard();
         var repository = new InMemoryFleetTaskRepository();
         var dispatcher = new TaskDispatcher(board, repository);
@@ -88,7 +85,6 @@ public class TaskDispatcherTests
     [Fact]
     public async Task Reload_preserves_fifo_order()
     {
-        // Arrange
         var board = new TaskBoard();
         var repository = new InMemoryFleetTaskRepository();
         var tasks = new[]
@@ -112,7 +108,6 @@ public class TaskDispatcherTests
     [Fact]
     public async Task FailAsync_persists_the_failure()
     {
-        // Arrange
         var board = new TaskBoard();
         var repository = new InMemoryFleetTaskRepository();
         var dispatcher = new TaskDispatcher(board, repository);

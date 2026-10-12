@@ -13,7 +13,7 @@ Only the reviewer changes this table, and only after a passing review.
 | M0 | Repo and tooling | done |
 | M1 | Warehouse model and one shuttle | done |
 | M2 | Message contract and transport | done |
-| M3 | Fleet manager core | in progress |
+| M3 | Fleet manager core | done |
 | M4 | Traffic control | not started |
 | M5 | Faults and recovery | not started |
 | M6 | WMS integration | not started |
@@ -22,6 +22,8 @@ Only the reviewer changes this table, and only after a passing review.
 
 ### Verification notes
 Commands the reviewer ran to confirm each `done` milestone go here.
+
+**M3** — verified 2026-10-12, review in `docs/reviews/09-three-shuttles-finish-queue.md`. From `src/`: `dotnet build` exit 0 (0 warnings / 0 errors); `dotnet test ShuttleFleet.slnx -v m --filter "Category!=Integration"` exit 0 with 7 `Passed!` lines and 70 tests (`FleetManager.Tests` 11 = 5 + 6 new dispatcher tests); the six pinned dispatcher test names are present via `dotnet test ShuttleFleet.slnx --list-tests`. With the database up: `dotnet test FleetManager.Tests/FleetManager.Tests.csproj -v m --logger "console;verbosity=detailed" --filter "Category=Integration"` exit 0, with `Passed FleetManager.Tests.EndToEndTests.Three_shuttles_finish_queue_and_state_survives_restart` and `Passed FleetManager.Tests.RestartSurvivalTests.State_survives_restart_after_persisting_tasks`, `Passed: 2`, zero skipped; `psql` shows ten rows — nine `done` in the round-robin SH-01/02/03 pattern and `task-hold` `queued` — and the whole suite is 72 tests with `FleetManager.Tests` 13. Fresh container: `docker build -f docker/Dockerfile.build -t shuttle-fleet-build .` exit 0 and `docker run --rm shuttle-fleet-build` exit 0 with 7 `Passed!` lines and `FleetManager.Tests` 11 (the `Integration` trait excluded; there is no database in the container). Nine mutation rows in a throwaway copy: eight turned the relevant test red — missing `CompleteAsync` save, flipped `created_at` load order, dropped `task-hold` save (product-side and test-side), the `LoadAllAsync` fixture with a stale `state='legacy_state'` row planted, a `ToString()` state binding, missing `FailAsync` save, and an ignored shuttle id — and the ninth (the sentinel `GetAsync` reset, same stale row) stayed green and deleted the row, closing review 08 C3. Contract unchanged: `v1.md` `Version: 1`, `v2.md` `Version: 2`, no `v3.md`; `FleetCore`/`FleetCore.Tests` pure and untouched; `Program.cs` and the Dockerfile untouched.
 
 **M0** — verified 2026-10-08, re-review in `docs/reviews/03-docker-services.md`. From repo root: `docker compose -f docker/compose.yml config --services` prints `broker` and `database`; `up -d`, `ps -q | wc -l` = 2, `docker run --rm --network shuttle-fleet_default eclipse-mosquitto:2.0 mosquitto_pub -h broker -t acceptance/probe -m ok` and `docker run --rm --network shuttle-fleet_default postgres:17 pg_isready -h database -U shuttle -d shuttle` both exit 0, `down`; `docker build -f docker/Dockerfile.build -t shuttle-fleet-build .` exit 0; `docker run --rm shuttle-fleet-build` exit 0 with `grep -c 'Passed!'` = 2; from `src/`, `dotnet build` and `dotnet test` exit 0. Fresh-container build and suite green; gates mutation-proven able to fail.
 
