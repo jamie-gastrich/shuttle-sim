@@ -9,7 +9,6 @@ public sealed record RunResult(int Ticks, bool AllDone);
 public sealed class RunLoop
 {
     private readonly OccupancyMap _occupancy;
-    private readonly Track _track;
     private readonly TrafficController _traffic;
     private readonly RunLoopGate _gate;
     private readonly TaskBoard _board;
@@ -18,6 +17,7 @@ public sealed class RunLoop
     private readonly Dictionary<string, FleetTask> _activeTasksByShuttle;
     private readonly TimeSpan _tickInterval;
     private DateTime _currentTime;
+    private int _ticks;
 
     public RunLoop(
         OccupancyMap occupancy,
@@ -31,7 +31,6 @@ public sealed class RunLoop
         TimeSpan tickInterval)
     {
         _occupancy = occupancy ?? throw new ArgumentNullException(nameof(occupancy));
-        _track = track ?? throw new ArgumentNullException(nameof(track));
         _traffic = traffic ?? throw new ArgumentNullException(nameof(traffic));
         _gate = gate ?? throw new ArgumentNullException(nameof(gate));
         _board = board ?? throw new ArgumentNullException(nameof(board));
@@ -44,66 +43,30 @@ public sealed class RunLoop
 
     public async Task<RunResult> RunAsync(CancellationToken cancellationToken = default)
     {
-        var ticks = 0;
-
         while (!cancellationToken.IsCancellationRequested)
         {
-            var hasQueuedTask = _board.NextQueued() is not null;
-            var hasActiveTask = _activeTasksByShuttle.Count > 0;
-            var hasMovingShuttle = _shuttles.Any(shuttle => shuttle.State == ShuttleState.Moving);
-
-            if (!hasQueuedTask && !hasActiveTask && !hasMovingShuttle)
+            if (IsDone())
             {
-                return new RunResult(ticks, true);
+                return new RunResult(_ticks, true);
             }
 
-            await TickAsync(cancellationToken);
-            ticks++;
+            var result = await TickAsync(cancellationToken);
+            if (result.AllDone)
+            {
+                return result;
+            }
         }
 
-        return new RunResult(ticks, false);
+        return new RunResult(_ticks, false);
     }
 
-    public void Run(int ticks)
+    public async Task<RunResult> TickAsync(CancellationToken cancellationToken = default)
     {
-        for (var index = 0; index < ticks; index++)
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (IsDone())
         {
-            Tick();
-        }
-    }
-
-    public void Tick()
-    {
-        TickAsync(CancellationToken.None).GetAwaiter().GetResult();
-    }
-
-    public async Task TickAsync(CancellationToken cancellationToken = default)
-    {
-        _currentTime += _tickInterval;
-
-        foreach (var shuttle in _shuttles)
-        {
-            if (shuttle.State != ShuttleState.Moving)
-            {
-                continue;
-            }
-
-            try
-            {
-                shuttle.CompleteMove(_currentTime);
-                _occupancy.SetOccupiedLane(shuttle.ShuttleId, shuttle.Position);
-                _traffic.Release(shuttle.ShuttleId);
-
-                if (_activeTasksByShuttle.TryGetValue(shuttle.ShuttleId, out var task))
-                {
-                    await _dispatcher.CompleteAsync(task.TaskId, _currentTime, cancellationToken);
-                    _activeTasksByShuttle.Remove(shuttle.ShuttleId);
-                }
-            }
-            catch (ShuttleRejectedException)
-            {
-                // The move is not complete for this time step yet.
-            }
+            return new RunResult(_ticks, true);
         }
 
         foreach (var shuttle in _shuttles)
@@ -132,12 +95,54 @@ public sealed class RunLoop
 
             if (!_gate.CommitMove(shuttle.ShuttleId, task.ToLane))
             {
+                // Fail the assigned task so a lost reservation race cannot leave it stranded outside the queue.
+                await _dispatcher.FailAsync(assigned.TaskId, "Route reservation failed after assignment.", _currentTime, cancellationToken);
                 continue;
             }
 
             shuttle.StartMove(task.ToLane, _currentTime);
-            await _dispatcher.StartAsync(assigned.TaskId, _currentTime, cancellationToken);
             _activeTasksByShuttle[shuttle.ShuttleId] = assigned;
+            // Persist InProgress; the active-task map is the in-flight set used by IsDone.
+            await _dispatcher.StartAsync(assigned.TaskId, _currentTime, cancellationToken);
         }
+
+        _currentTime += _tickInterval;
+
+        foreach (var shuttle in _shuttles)
+        {
+            if (shuttle.State != ShuttleState.Moving)
+            {
+                continue;
+            }
+            try
+            {
+                shuttle.CompleteMove(_currentTime);
+                // Release frees the transit reservation; occupancy records the physical destination, which remains occupied.
+                _occupancy.SetOccupiedLane(shuttle.ShuttleId, shuttle.Position);
+                _traffic.Release(shuttle.ShuttleId);
+
+                if (_activeTasksByShuttle.TryGetValue(shuttle.ShuttleId, out var task))
+                {
+                    // Persist Done after physical completion; repository errors propagate and leave the active entry in place.
+                    await _dispatcher.CompleteAsync(task.TaskId, _currentTime, cancellationToken);
+                    _activeTasksByShuttle.Remove(shuttle.ShuttleId);
+                }
+            }
+            catch (ShuttleRejectedException)
+            {
+                // The move is not complete for this time step yet.
+            }
+        }
+
+        _ticks++;
+        return new RunResult(_ticks, IsDone());
+    }
+
+    private bool IsDone()
+    {
+        var hasQueuedTask = _board.NextQueued() is not null;
+        var hasActiveTask = _activeTasksByShuttle.Count > 0;
+        var hasMovingShuttle = _shuttles.Any(shuttle => shuttle.State == ShuttleState.Moving);
+        return !hasQueuedTask && !hasActiveTask && !hasMovingShuttle;
     }
 }
