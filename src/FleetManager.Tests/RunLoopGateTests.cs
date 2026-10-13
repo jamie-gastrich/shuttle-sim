@@ -1,7 +1,7 @@
 using ShuttleCore;
 using TrafficCore;
 
-namespace FleetManager;
+namespace FleetManager.Tests;
 
 public class RunLoopGateTests
 {
