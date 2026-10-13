@@ -39,4 +39,10 @@ public class TrafficController
     {
         _reservations.Release(shuttleId);
     }
+
+    public bool IsRouteFree(string shuttleId, string fromLane, string toLane)
+    {
+        var route = _track.Route(fromLane, toLane);
+        return !_reservations.IsOccupiedByOthers(route, shuttleId);
+    }
 }

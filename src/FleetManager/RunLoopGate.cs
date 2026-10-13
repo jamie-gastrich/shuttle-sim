@@ -30,8 +30,21 @@ public sealed class RunLoopGate
             return false;
         }
 
-        // A move reservation is released when the transit has ended; the destination remains
-        // occupied by the shuttle's last known position until a separate status update clears it.
+        if (!Traffic.IsRouteFree(shuttleId, currentLane, destinationLane))
+        {
+            return false;
+        }
+        return true;
+    }
+
+    public bool CommitMove(string shuttleId, string destinationLane)
+    {
+        var currentLane = Occupancy.GetOccupiedLane(shuttleId);
+        if (currentLane is null)
+        {
+            return false;
+        }
+
         var decision = Traffic.TryReserveRoute(shuttleId, currentLane, destinationLane);
         return decision.Granted;
     }
