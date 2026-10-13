@@ -24,7 +24,7 @@ Open a tier only when you are stuck. Stop reading as soon as the tier gets you m
 3. **Add `lock` to `OccupancyMap`.** Add `private readonly object _lock = new();`. Wrap every public method body in `lock (_lock) { ... }`. The dictionary field stays.
 4. **Add `lock` to `SegmentReservations`.** Same pattern. Add `private readonly object _lock = new();`. Wrap every public method body.
 5. **The run loop.** Add `src/FleetManager/RunLoop.cs`. Constructor takes `OccupancyMap`, `Track`, `TrafficController`, `RunLoopGate`, `TaskBoard`, `TaskDispatcher`, `IReadOnlyList<Shuttle>`, `DateTime startTime`, `TimeSpan tickInterval`. `RunAsync` loops: for each idle shuttle, peek at `board.NextQueued()`, check `gate.CanMove`, call `dispatcher.AssignNextAsync`, call `gate.CommitMove`, call `shuttle.StartMove`. Advance `now` by `tickInterval`. For each moving shuttle, try `shuttle.CompleteMove(now)`; on success, call `occupancy.SetOccupiedLane` and `traffic.Release`. Stop when `board.NextQueued()` is `null` and all shuttles are idle.
-6. **The stress test.** Add `src/FleetManager.Tests/RunLoopStressTests.cs`. Build a real `Track` from `new Rack(1, 8, 1)`, a real `TrafficController`, an `OccupancyMap`, a `RunLoopGate`, a `TaskBoard`, a `TaskDispatcher` (with an in-memory repository), and four or more `Shuttle` objects. Create four or more tasks with overlapping routes. Run the loop with a `CancellationTokenSource` timeout. Assert `result.AllDone` is `true`. After every tick, assert no segment has more than one owner.
+6. **The stress test.** Add `src/FleetManager.Tests/RunLoopStressTests.cs`. Build a real `Track` from `new Rack(4, 4, 1)`, a real `TrafficController`, an `OccupancyMap`, a `RunLoopGate`, a `TaskBoard`, a `TaskDispatcher` (with an in-memory repository), and four or more `Shuttle` objects. Create four or more tasks with overlapping routes. Run the loop with a `CancellationTokenSource` timeout. Assert `result.AllDone` is `true`. After every tick, assert no segment has more than one owner.
 7. **Run the phases in order.** The counts are gated, not admired: Phase 4 expects `RC 0`, **8** `Passed!`, **0** `Failed!`, **84** tests, `FleetManager.Tests` = 16. Phase 5 scans **every** test project for docker launches.
 
 ---
@@ -138,7 +138,7 @@ cd src && dotnet test ShuttleFleet.slnx -v m --filter "Category!=Integration"
 # expects RC 0, 8 Passed!, 0 Failed!, 84 tests, FleetManager.Tests=16
 ```
 
-**If stuck on the stress test:** Use `new Rack(1, 8, 1)` so there is room for four shuttles with overlapping routes. Give each shuttle a destination that requires passing through at least one other shuttle's lane. Use a `CancellationTokenSource` with a 5-second timeout so a deadlock fails the test instead of hanging. Assert `result.AllDone` is `true` and that no two shuttles ever occupy the same lane.
+**If stuck on the stress test:** Use `new Rack(4, 4, 1)` so there is room for four shuttles with overlapping routes. Give each shuttle a destination that requires passing through at least one other shuttle's lane. Use a `CancellationTokenSource` with a 5-second timeout so a deadlock fails the test instead of hanging. Assert `result.AllDone` is `true` and that no two shuttles ever occupy the same lane.
 
 **Acceptance sanity:** `TaskDispatcher.cs` diff --quiet vs HEAD is true. Pure suite (Category!=Integration) stays green. No new message kinds, no contract version bump.
 

@@ -511,7 +511,7 @@ Build the M4 run loop: a `RunLoop` class that drives shuttles through the gate, 
    - The file must contain **no** `Npgsql`, `MQTTnet`, `Messaging`, or `Contracts`. It references `ShuttleCore` for `Shuttle` and `FleetCore` for `TaskBoard`.
 
 6. **Add the stress test: `src/FleetManager.Tests/RunLoopStressTests.cs`.**
-   - Build a real `Track` from `new Rack(1, 8, 1)`, a real `TrafficController`, an `OccupancyMap`, a `RunLoopGate`, a `TaskBoard`, a `TaskDispatcher` (with an in-memory repository), and four or more `Shuttle` objects.
+   - Build a real `Track` from `new Rack(4, 4, 1)`, a real `TrafficController`, an `OccupancyMap`, a `RunLoopGate`, a `TaskBoard`, a `TaskDispatcher` (with an in-memory repository), and four or more `Shuttle` objects.
    - Create four or more tasks with overlapping routes. Add them to the board.
    - Run the loop with a fixed start time and a tick interval. Use a `CancellationTokenSource` with a timeout so a deadlock fails the test instead of hanging.
    - Assert `result.AllDone` is `true` (all shuttles finished).
