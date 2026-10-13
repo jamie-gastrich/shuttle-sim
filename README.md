@@ -14,8 +14,8 @@ Only the reviewer changes this table, and only after a passing review.
 | M1 | Warehouse model and one shuttle | done |
 | M2 | Message contract and transport | done |
 | M3 | Fleet manager core | done |
-| M4 | Traffic control | in progress |
-| M5 | Faults and recovery | not started |
+| M4 | Traffic control | done |
+| M5 | Faults and recovery | in progress |
 | M6 | WMS integration | not started |
 | M7 | Operator dashboard and diagnostics | not started |
 | M8 | Stretch | not started |
