@@ -15,7 +15,7 @@ Only the reviewer changes this table, and only after a passing review.
 | M2 | Message contract and transport | done |
 | M3 | Fleet manager core | done |
 | M4 | Traffic control | done |
-| M5 | Faults and recovery | done |
+| M5 | Faults and recovery | in progress |
 | M6 | WMS integration | not started |
 | M7 | Operator dashboard and diagnostics | not started |
 | M8 | Stretch | not started |
@@ -61,7 +61,7 @@ docker compose -f docker/compose.yml down
 ### Verification notes
 Commands the reviewer ran to confirm each `done` milestone go here.
 
-**M5** — lesson 14 alarms with severity (v3 `alarm` kind, rising-edge latch). Verified 2026-10-14. From /tmp/opencode/l14rereview/src: `dotnet test ShuttleFleet.slnx -v m --filter "Category!=Integration"` RC 0, 8 `Passed!`, 0 `Failed!`, 100 total (Contracts.Tests 7, FleetManager.Tests 28); `v3.md` has kinds row `AlarmMessage | alarm | alarm` and topic `{root}/{shuttleId}/alarm`; `Current=3`, renamed Messaging test present; mutations confirmed all latch/wire-vocab tests bite appropriately. No broker/container/processes left.
+**M5** (in progress) — slices reviewed so far: lesson 13 (heartbeats, lastSeenAt, timeout window) `docs/reviews/13-heartbeats-and-timeouts.md` ([record 20](docs/decisions/20-liveness-heartbeats-and-timeouts.md)); lesson 14 (alarms with severity, v3 `alarm` kind, rising-edge latch) `docs/reviews/14-alarms-with-severity.md` ([record 21](docs/decisions/21-alarms-with-severity.md)). From `src/`: `cd src && dotnet test ShuttleFleet.slnx -v m --filter "Category!=Integration"` → RC 0, 8 `Passed!`, 0 `Failed!`, 100 tests (Contracts.Tests 7, FleetManager.Tests 28). `AlarmEvaluator` currently raises only `lostCommunication`; `blockedPath` and `palletNotDetected` are defined in `src/Contracts/AlarmCodes.cs` but not raised. Not yet done: fault injection/raising for `blockedPath`/`palletNotDetected`; reassigning a failed shuttle’s work; operator-acknowledged recovery; and the M5 done-when proof that every injected fault leads to the right alarm and right recovery and saved state never loses or duplicates a pallet (recovery/reconciliation are later slices).
 
 **M4** — lesson 12 wiring slice reviewed 2026-10-13, `docs/reviews/12-run-loop-wiring.md`. Verified M4 done-when: a stress scenario with four or more shuttles runs with no collisions and no permanent deadlock. From `src/`: `cd src && dotnet test ShuttleFleet.slnx --filter "Category!=Integration"` → RC 0, 8 `Passed!`, 0 `Failed!`, 84 tests, `FleetManager.Tests` 16. Stress test `Four_or_more_shuttles_finish_with_no_collisions_and_no_deadlock` (4+ shuttles, overlapping routes) drives tick-by-tick and calls `AssertNoSharedLanes` after every tick; mutations confirmed the stress/collision checks are load-bearing. Rule is documented in `docs/decisions/19-run-loop-wiring-and-concurrency.md`. Known limitation recorded in review 12: the gate is not wired into `FleetManager/Program.cs` (deferred to a later wiring slice); the delivered slice demonstrates the run loop behavior under test.
 
