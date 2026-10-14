@@ -657,11 +657,12 @@ grep -qE '"critical"' src/FleetManager/appsettings.json
 
 ```bash
 # Phase 6 — the contract page
-grep -qE '^Version: 3$' docs/contract/v3.md
-grep -qE 'alarm' docs/contract/v3.md
-grep -qE 'shuttle/\{shuttleId\}/alarm|\{root\}/\{shuttleId\}/alarm' docs/contract/v3.md
-grep -qE 'critical' docs/contract/v3.md
-grep -qE 'lostCommunication' docs/contract/v3.md
+grep -qE '^Version: 3$' docs/contract/v3.md || echo "FAIL: v3.md must say Version: 3"
+grep -qE 'alarm' docs/contract/v3.md || echo "FAIL: v3.md must mention the alarm kind"
+grep -qE 'shuttle/\{shuttleId\}/alarm|\{root\}/\{shuttleId\}/alarm' docs/contract/v3.md || echo "FAIL: v3.md must state the alarm topic {root}/{shuttleId}/alarm"
+grep -qE 'critical' docs/contract/v3.md || echo "FAIL: v3.md must list the critical severity"
+grep -qE 'lostCommunication' docs/contract/v3.md || echo "FAIL: v3.md must list the lostCommunication code"
+grep -qE '\| *`AlarmMessage` *\| *`alarm` *\|' docs/contract/v3.md || echo "FAIL: v3.md kinds table needs an AlarmMessage | alarm | alarm row"
 for k in moveCommand commandAck shuttleStatus; do grep -qE "\`$k\`" docs/contract/v3.md || echo "v3 missing carried-over kind: $k"; done
 ```
 
@@ -705,7 +706,7 @@ git diff --quiet HEAD -- src/Contracts/MessageEnvelope.cs src/Contracts/ShuttleS
   && echo "OK: the carried-over contract shapes are unchanged" \
   || echo "FAIL: a carried-over contract shape changed"
 grep -rniE 'MessageFamily\.Alarm|TopicScheme\.Alarm|QosOptions\.Alarm|blockedPath|palletNotDetected' src --include='*.cs' \
-  | grep -vE 'src/Contracts/AlarmCodes\.cs' || true
+  | grep -vE 'src/Contracts/AlarmCodes\.cs|src/[^/]+\.Tests/' || true
 ```
 
 **Proof details.** The assignment adds four product files (`Alarm.cs`, `AlarmMessage.cs`, `AlarmSeverities.cs`, `AlarmCodes.cs`), adds one product file (`AlarmEvaluator.cs`), edits two product files (`MessageTypes.cs` gains a constant and the bump; `appsettings.json` gains a key), adds the contract page `docs/contract/v3.md`, adds two test files (three + seven tests), and renames one test. The pure test total goes from **90 to 100**: `Contracts.Tests` gains three (4 → 7), `FleetManager.Tests` gains seven (21 → 28). `Messaging.Tests` stays 8 (one rename). The gate is `RC 0`, 8 `Passed!`, 0 `Failed!`, 100 total.
