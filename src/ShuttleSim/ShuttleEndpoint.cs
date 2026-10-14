@@ -79,6 +79,9 @@ public sealed class ShuttleEndpoint
         await PublishStatusAsync("idle", arrival, cancellationToken);
     }
 
+    public Task PublishStatusAsync(DateTime sentAt, CancellationToken cancellationToken) =>
+    PublishStatusAsync(_shuttle.State.ToWireName(), sentAt, cancellationToken);
+
     private Task AcknowledgeAsync(MoveCommandMessage command, bool accepted, string? reason,
         DateTime sentAt, CancellationToken cancellationToken)
     {

@@ -97,6 +97,14 @@ async Task<int> RunServerAsync()
             return connectedEndpoint.HandleCommandAsync(message.Payload, DateTime.UtcNow, ct);
         },
         CancellationToken.None);
+    
+    var heartbeatIntervalMs = configuration.GetValue<int>("Shuttle:HeartbeatIntervalMs");
+
+    if (heartbeatIntervalMs < 1)
+        throw new InvalidOperationException("Shuttle:HeartbeatIntervalMs must be positive.");
+    using var stopping = new CancellationTokenSource();
+    var heartbeat = new HeartbeatPublisher(connectedEndpoint, TimeSpan.FromMilliseconds(heartbeatIntervalMs));
+    var heartbeatTask = heartbeat.RunAsync(() => DateTime.UtcNow, stopping.Token);
 
     Console.WriteLine($"Shuttle {shuttleId} listening on {topics.Command(shuttleId)}");
     var stopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -113,6 +121,15 @@ async Task<int> RunServerAsync()
     finally
     {
         Console.CancelKeyPress -= cancelHandler;
+    }
+    stopping.Cancel();
+    try
+    {
+        await heartbeatTask;
+    }
+    catch (OperationCanceledException) when (stopping.IsCancellationRequested)
+    {
+        // Expected: the heartbeat loop stopped because we cancelled it.
     }
 
     return 0;

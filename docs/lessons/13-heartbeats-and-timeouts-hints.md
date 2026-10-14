@@ -140,6 +140,8 @@ cd src && dotnet test ShuttleFleet.slnx -v m --filter "Category!=Integration"
 
 **If stuck on the heartbeat test:** the existing `FakeBus` records every `PublishAsync`. Call the new public `PublishStatusAsync(Start, CancellationToken.None)`, then assert exactly one `MessageFamily.Status` message and that its deserialized state and position match the shuttle. No broker needed.
 
+**The mutation only bites when the shuttle is not idle (verified).** Hard-coding `idle` inside `PublishStatusAsync` only turns `Heartbeat_publishes_the_current_status_without_a_command` red if the shuttle's state is something other than `Idle` at the moment you call `PublishStatusAsync`. If the fixture publishes first and moves the shuttle afterwards, both the real code and the mutated code emit `idle`, the assert passes, and the test proves nothing. Move (or load) the shuttle **before** publishing. The passing fixture calls `shuttle.StartMove("A01-L02", Start)` and then `PublishStatusAsync`, so the mutation flips the asserted `moving` to `idle` and the test goes red.
+
 **Acceptance sanity:** the contract stays v2 (`Version: 2`, no `v3.md`); the pure suite stays green with no database; no new message kinds; no process left running.
 
 ---
@@ -148,41 +150,66 @@ cd src && dotnet test ShuttleFleet.slnx -v m --filter "Category!=Integration"
 
 **For lesson 13 (heartbeats and timeouts).** The owner asked where to put the "wait for Ctrl+C, then `stopping.Cancel(); await heartbeatTask;`" step, and what it does. The serve loop in this lesson is the **shuttle simulator**: `src/ShuttleSim/Program.cs`, in the method `RunServerAsync()`. It is **not** `src/FleetManager/Program.cs`. The fleet manager is untouched by this assignment; its own serve loop is a later lesson.
 
-### Where it goes in `RunServerAsync()`
+### Where it goes in `RunServerAsync()` (the starting state, before you edit it)
 
-The method already does all of this, in order:
+This is a map of the file **as it is right now**, before you add anything. It is the `src/ShuttleSim/Program.cs` at HEAD (the version you start from). It has **no heartbeat code at all** — no interval read, no `CancellationTokenSource`, no `HeartbeatPublisher`, no `heartbeatTask`.
 
-- `:79` reads `Shuttle:HeartbeatIntervalMs`; `:102-103` throws when it is not positive.
-- `:104` `using var stopping = new CancellationTokenSource();` — the shutdown token.
-- `:105-106` builds `HeartbeatPublisher` and starts the background task:
-  `var heartbeatTask = heartbeat.RunAsync(() => DateTime.UtcNow, stopping.Token);`
-- `:108` prints "Shuttle … listening on …".
-- `:109` `var stopped = new TaskCompletionSource(...);`
-- `:110-115` hooks `Console.CancelKeyPress`. On Ctrl+C it sets `eventArgs.Cancel = true` and calls `stopped.TrySetResult()`.
-- `:116-123` `try { await stopped.Task; } finally { Console.CancelKeyPress -= cancelHandler; }` — this is the "wait for Ctrl+C" wait.
+- `:67` `async Task<int> RunServerAsync()` starts.
+- `:69-78` loads configuration and reads `Shuttle:Id` and `Shuttle:StartLane`.
+- `:88-99` builds the bus and `connectedEndpoint` (`:90-91`), connects, and subscribes to the command topic.
+- `:101` prints `Shuttle {shuttleId} listening on ...`.
+- `:102` `var stopped = new TaskCompletionSource(...);`.
+- `:103-107` the `cancelHandler` lambda.
+- `:108` `Console.CancelKeyPress += cancelHandler;`.
+- `:109-112` `try { await stopped.Task; }`.
+- `:113-116` `finally { Console.CancelKeyPress -= cancelHandler; }` — together with `:109-112` this is the **Ctrl+C wait**.
+- `:118` `return 0;`.
+- `:119` the method's closing `}`.
 
-The two missing lines belong **after** that `try/finally` (after its closing brace at `:123`) and **before** `return 0;` at `:125`. The tail of `RunServerAsync()` should look like this:
+Everything you add wraps around that Ctrl+C wait. There are **two groups**, and the order matters:
+
+**Group 1 — configure and start, BEFORE the wait.** Insert after the subscribe call ends at `:99` and before `Console.CancelKeyPress += cancelHandler;` at `:108`. Placing it above the "listening" print (`:101`) is fine; that is the order the passing version used. These five statements, in order:
+
+1. read the interval;
+2. guard it;
+3. create the shutdown token;
+4. build the publisher;
+5. start the background task.
 
 ```csharp
+    var heartbeatIntervalMs = configuration.GetValue<int>("Shuttle:HeartbeatIntervalMs");
+    if (heartbeatIntervalMs < 1)
+        throw new InvalidOperationException("Shuttle:HeartbeatIntervalMs must be positive.");
+
+    using var stopping = new CancellationTokenSource();
+    var heartbeat = new HeartbeatPublisher(connectedEndpoint, TimeSpan.FromMilliseconds(heartbeatIntervalMs));
+    var heartbeatTask = heartbeat.RunAsync(() => DateTime.UtcNow, stopping.Token);
+```
+
+After that, the Ctrl+C wait runs **unchanged**: `stopped`, `cancelHandler`, `Console.CancelKeyPress += cancelHandler;`, then `try { await stopped.Task; } finally { Console.CancelKeyPress -= cancelHandler; }`.
+
+**Group 2 — cancel and await, AFTER the wait.** Insert after the `finally` closing brace (`:116` in the starting file) and before `return 0;` (`:118`):
+
+```csharp
+    stopping.Cancel();
     try
     {
-        await stopped.Task;
+        await heartbeatTask;
     }
-    finally
+    catch (OperationCanceledException) when (stopping.IsCancellationRequested)
     {
-        Console.CancelKeyPress -= cancelHandler;
+        // Expected: the heartbeat loop stopped because we cancelled it.
     }
-
-    stopping.Cancel();
-    await heartbeatTask;
 
     return 0;
 }
 ```
 
+**The rule, said plainly:** start the heartbeat **before** you wait for Ctrl+C, and stop and drain it **after** the wait returns. Start it after the wait and it never runs. Cancel it before the wait and it stops immediately and never sends a heartbeat. Start it in the right place but forget to cancel and `RunServerAsync` returns while the publisher is still in flight. All three orderings are wrong; only "start before, cancel after" is right.
+
 ### What the two lines do
 
-`stopping.Cancel()` — **raise the signal.** The token created at `:104` is the same token passed into `RunAsync` at `:106`. `Cancel()` flips that token to "cancelled". The heartbeat loop is parked inside `PeriodicTimer.WaitForNextTickAsync(stopping.Token)` (`src/ShuttleSim/HeartbeatPublisher.cs:17`). Cancelling the token ends that wait, so the loop stops asking for the next tick. Picture a night guard on a radio schedule: you tell the guard "shift's over, stop calling in" instead of grabbing the radio out of their hand.
+`stopping.Cancel()` — **raise the signal.** The token created at `:105` is the same token passed into `RunAsync` at `:107`. `Cancel()` flips that token to "cancelled". The heartbeat loop is parked inside `PeriodicTimer.WaitForNextTickAsync(stopping.Token)` (`src/ShuttleSim/HeartbeatPublisher.cs:17`). Cancelling the token ends that wait, so the loop stops asking for the next tick. Picture a night guard on a radio schedule: you tell the guard "shift's over, stop calling in" instead of grabbing the radio out of their hand.
 
 `await heartbeatTask` — **wait for it to actually finish.** `Cancel()` only raises a flag. It does not prove the loop has left. `heartbeatTask` is the `Task` returned by `RunAsync`. Awaiting it waits until `RunAsync` has returned. Without this line, `RunServerAsync` would `return 0` while the publisher task is still in flight, and `dotnet run` would tear the process down around it. With it, shutdown is ordered: signal, then wait, then return. Picture a forklift: tell it to stop, wait until it is actually parked, then shut the gate. Do not shut the gate while it is still moving.
 
@@ -206,7 +233,7 @@ The `when (stopping.IsCancellationRequested)` filter is important: it catches th
 
 ### Why `using var stopping` matters
 
-`using var stopping` at `:104` means the `CancellationTokenSource` is **disposed** when `RunServerAsync` returns (the end of the method's scope). Two different jobs are in play:
+`using var stopping` at `:105` means the `CancellationTokenSource` is **disposed** when `RunServerAsync` returns (the end of the method's scope). Two different jobs are in play:
 
 - `Cancel()` **signals** the waiters (the heartbeat loop). It is what actually tells the work to stop.
 - `Dispose()` (from `using`) **releases** the source's internal resources — its callback registrations and timer handle — instead of leaving them for the garbage collector.

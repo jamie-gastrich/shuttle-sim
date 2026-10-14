@@ -95,6 +95,24 @@ public sealed class ShuttleEndpointTests
             });
     }
 
+    [Fact]
+    public async Task Heartbeat_publishes_the_current_status_without_a_command()
+    {
+        var bus = new FakeBus();
+        var shuttle = CreateShuttle();
+        var endpoint = CreateEndpoint(shuttle, bus);
+        shuttle.StartMove("A01-L02", Start);
+        await endpoint.PublishStatusAsync(Start, CancellationToken.None);
+
+        var status = Assert.Single(bus.Published);
+        Assert.Equal(MessageFamily.Status, status.Family);
+
+        var statusMessage = JsonSerializer.Deserialize<ShuttleStatusMessage>(status.Payload)!;
+        Assert.Equal("moving", statusMessage.Status.State);
+        Assert.Equal("A01-L01", statusMessage.Status.Position);
+        Assert.Equal(Start, statusMessage.Status.Timestamp);
+    }
+
     private static Shuttle CreateShuttle()
     {
         var rack = new Rack(aisleCount: 2, lanesPerAisle: 2, slotsPerLane: 2);
