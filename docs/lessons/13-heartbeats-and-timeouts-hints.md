@@ -144,4 +144,66 @@ cd src && dotnet test ShuttleFleet.slnx -v m --filter "Category!=Integration"
 
 ---
 
+## Addendum — FleetManager serve-loop cancellation (owner question)
+
+**For lesson 13 (heartbeats and timeouts).** The owner asked where in `src/FleetManager/Program.cs` to put the "wait for Ctrl+C, then `stopping.Cancel(); await heartbeatTask;`" pattern, and what it does.
+
+### Placement relative to existing M2 code
+
+`src/FleetManager/Program.cs` currently has:
+- CLI parsing: if no args → print and return; if `move <shuttleId> <toLane>` → call `RunMoveAsync(...)`.
+- `RunMoveAsync(...)` is the M2 one-shot demo (connects to bus, subscribes for ack/status for that single move, sends a command with retry, waits for result, returns exit code).
+
+For M5 serve mode, **add a new serve branch** alongside `move` (mirroring `ShuttleSim/Program.cs` which has `serve` mode). Do **not** remove or restructure the existing `move` demo.
+
+Suggested shape:
+```csharp
+if (args.Length == 0)
+{
+    Console.WriteLine("Fleet Manager Coming Online");
+    return 0;
+}
+
+if (args.Length == 3 && args[0] == "move")
+{
+    return await RunMoveAsync(args[1], args[2]);
+}
+
+if (args.Length == 1 && args[0] == "serve")
+{
+    return await RunServeAsync();
+}
+
+Console.Error.WriteLine("Usage: FleetManager move <shuttleId> <toLane>|serve");
+return 2;
+```
+
+Put the Ctrl+C shutdown code inside `RunServeAsync()` (a new method). Keep `RunMoveAsync()` exactly as-is in spirit; it is the short-lived demo. The serve mode is the long-running one that tracks liveness from incoming `shuttleStatus` messages via `ShuttleHealth`.
+
+### Mechanics: what happens in the serve loop
+
+The phrase "wait for Ctrl+C, then `stopping.Cancel(); await heartbeatTask;`" describes the **graceful shutdown pattern**. In `ShuttleSim/Program.cs`, the background task is `heartbeat.RunAsync(...)` (the periodic heartbeat publisher). In `FleetManager` serve mode, the long-running background work is different (you are receiving messages and updating `ShuttleHealth`), but the same shutdown mechanics apply.
+
+Key points:
+1. **Create a cancellation source for shutdown.** `using var stopping = new CancellationTokenSource();` This token controls all background work (subscriptions, timers, run loops).
+2. **Start background work with that token.** Examples from ShuttleSim: `var heartbeatTask = heartbeat.RunAsync(clock, stopping.Token);`. In FleetManager serve mode, you might start any long-running tasks (e.g. a liveness checker loop, or just rely on message handlers), collecting the tasks you need to await on shutdown. If all work is event-driven via subscriptions, you still need to wait for an external shutdown signal (Ctrl+C).
+3. **Wait for Ctrl+C (operator stop).** Hook `Console.CancelKeyPress` and set a `TaskCompletionSource` so the main task blocks until interrupted. Set `eventArgs.Cancel = true` to allow graceful shutdown. This mirrors ShuttleSim lines ~109-126.
+4. **On shutdown, cancel and await.** When Ctrl+C fires, call `stopping.Cancel()` (so all background work sees cancellation) and `await` the background tasks (e.g. `await heartbeatTask;` in ShuttleSim). If there are multiple tasks, await them all (e.g. `Task.WhenAll`).
+5. **Clean up.** Dispose buses, tokens, timers (use `using`). Do not leave brokers/listeners running.
+
+**Line-level guidance for FleetManager/Program.cs:** Add the new `serve` branch in arg parsing (after the `move` branch). Implement `RunServeAsync()` similar in structure to `RunServerAsync()` in ShuttleSim but focused on the fleet side:
+- Load config (Messaging, FleetManager timeouts/liveness config if needed).
+- Connect bus and subscribe to `topics.AllStatuses` (and possibly acks) — when status arrives, deserialize and call `ShuttleHealth.RecordSeen(shuttleId, DateTime.UtcNow)` using the **manager's clock** (see lesson §2, rule 1).
+- If you start any periodic task (e.g. logging unresponsive shuttles on a timer), start it with `stopping.Token` and keep a task reference.
+- Wire Ctrl+C wait + cancel + await as above.
+- Return 0 on clean shutdown.
+
+**Important:** The "heartbeatTask" name in the question is the task for the long-running background operation. In ShuttleSim it's the publisher. In FleetManager serve mode, you may not have a publisher; you might have no periodic task at all if you only react to incoming messages — in that case you still need to wait for Ctrl+C and cancel, but there may be no `heartbeatTask` to await. The pattern is the same: identify what long-running work exists (subscriptions stay alive; message handling continues) and ensure clean shutdown. If nothing to await, just cancel and return.
+
+**What happens there (mechanics):** The serve mode runs until interrupted. The message bus subscriptions remain active; when `shuttleStatus` messages arrive (heartbeats or state changes), your status handler updates `ShuttleHealth.RecordSeen` with the current manager time. Ctrl+C signals the operator wants to stop; canceling `stopping` tells PeriodicTimers, async waits, and any cancellation-aware code to stop; awaiting tasks ensures they finish cleanup before process exits.
+
+This placement keeps the M2 `move` demo intact and adds M5 serve behavior as a separate mode. That matches how ShuttleSim does it and how the lesson structures the work.
+
+---
+
 Stuck? These hints cover the key ideas without giving the full solution. The acceptance criteria in the lesson file are the authoritative spec.
