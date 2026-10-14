@@ -144,65 +144,76 @@ cd src && dotnet test ShuttleFleet.slnx -v m --filter "Category!=Integration"
 
 ---
 
-## Addendum — FleetManager serve-loop cancellation (owner question)
+## Addendum — ShuttleSim serve-loop shutdown (owner question)
 
-**For lesson 13 (heartbeats and timeouts).** The owner asked where in `src/FleetManager/Program.cs` to put the "wait for Ctrl+C, then `stopping.Cancel(); await heartbeatTask;`" pattern, and what it does.
+**For lesson 13 (heartbeats and timeouts).** The owner asked where to put the "wait for Ctrl+C, then `stopping.Cancel(); await heartbeatTask;`" step, and what it does. The serve loop in this lesson is the **shuttle simulator**: `src/ShuttleSim/Program.cs`, in the method `RunServerAsync()`. It is **not** `src/FleetManager/Program.cs`. The fleet manager is untouched by this assignment; its own serve loop is a later lesson.
 
-### Placement relative to existing M2 code
+### Where it goes in `RunServerAsync()`
 
-`src/FleetManager/Program.cs` currently has:
-- CLI parsing: if no args → print and return; if `move <shuttleId> <toLane>` → call `RunMoveAsync(...)`.
-- `RunMoveAsync(...)` is the M2 one-shot demo (connects to bus, subscribes for ack/status for that single move, sends a command with retry, waits for result, returns exit code).
+The method already does all of this, in order:
 
-For M5 serve mode, **add a new serve branch** alongside `move` (mirroring `ShuttleSim/Program.cs` which has `serve` mode). Do **not** remove or restructure the existing `move` demo.
+- `:79` reads `Shuttle:HeartbeatIntervalMs`; `:102-103` throws when it is not positive.
+- `:104` `using var stopping = new CancellationTokenSource();` — the shutdown token.
+- `:105-106` builds `HeartbeatPublisher` and starts the background task:
+  `var heartbeatTask = heartbeat.RunAsync(() => DateTime.UtcNow, stopping.Token);`
+- `:108` prints "Shuttle … listening on …".
+- `:109` `var stopped = new TaskCompletionSource(...);`
+- `:110-115` hooks `Console.CancelKeyPress`. On Ctrl+C it sets `eventArgs.Cancel = true` and calls `stopped.TrySetResult()`.
+- `:116-123` `try { await stopped.Task; } finally { Console.CancelKeyPress -= cancelHandler; }` — this is the "wait for Ctrl+C" wait.
 
-Suggested shape:
+The two missing lines belong **after** that `try/finally` (after its closing brace at `:123`) and **before** `return 0;` at `:125`. The tail of `RunServerAsync()` should look like this:
+
 ```csharp
-if (args.Length == 0)
-{
-    Console.WriteLine("Fleet Manager Coming Online");
+    try
+    {
+        await stopped.Task;
+    }
+    finally
+    {
+        Console.CancelKeyPress -= cancelHandler;
+    }
+
+    stopping.Cancel();
+    await heartbeatTask;
+
     return 0;
 }
-
-if (args.Length == 3 && args[0] == "move")
-{
-    return await RunMoveAsync(args[1], args[2]);
-}
-
-if (args.Length == 1 && args[0] == "serve")
-{
-    return await RunServeAsync();
-}
-
-Console.Error.WriteLine("Usage: FleetManager move <shuttleId> <toLane>|serve");
-return 2;
 ```
 
-Put the Ctrl+C shutdown code inside `RunServeAsync()` (a new method). Keep `RunMoveAsync()` exactly as-is in spirit; it is the short-lived demo. The serve mode is the long-running one that tracks liveness from incoming `shuttleStatus` messages via `ShuttleHealth`.
+### What the two lines do
 
-### Mechanics: what happens in the serve loop
+`stopping.Cancel()` — **raise the signal.** The token created at `:104` is the same token passed into `RunAsync` at `:106`. `Cancel()` flips that token to "cancelled". The heartbeat loop is parked inside `PeriodicTimer.WaitForNextTickAsync(stopping.Token)` (`src/ShuttleSim/HeartbeatPublisher.cs:17`). Cancelling the token ends that wait, so the loop stops asking for the next tick. Picture a night guard on a radio schedule: you tell the guard "shift's over, stop calling in" instead of grabbing the radio out of their hand.
 
-The phrase "wait for Ctrl+C, then `stopping.Cancel(); await heartbeatTask;`" describes the **graceful shutdown pattern**. In `ShuttleSim/Program.cs`, the background task is `heartbeat.RunAsync(...)` (the periodic heartbeat publisher). In `FleetManager` serve mode, the long-running background work is different (you are receiving messages and updating `ShuttleHealth`), but the same shutdown mechanics apply.
+`await heartbeatTask` — **wait for it to actually finish.** `Cancel()` only raises a flag. It does not prove the loop has left. `heartbeatTask` is the `Task` returned by `RunAsync`. Awaiting it waits until `RunAsync` has returned. Without this line, `RunServerAsync` would `return 0` while the publisher task is still in flight, and `dotnet run` would tear the process down around it. With it, shutdown is ordered: signal, then wait, then return. Picture a forklift: tell it to stop, wait until it is actually parked, then shut the gate. Do not shut the gate while it is still moving.
 
-Key points:
-1. **Create a cancellation source for shutdown.** `using var stopping = new CancellationTokenSource();` This token controls all background work (subscriptions, timers, run loops).
-2. **Start background work with that token.** Examples from ShuttleSim: `var heartbeatTask = heartbeat.RunAsync(clock, stopping.Token);`. In FleetManager serve mode, you might start any long-running tasks (e.g. a liveness checker loop, or just rely on message handlers), collecting the tasks you need to await on shutdown. If all work is event-driven via subscriptions, you still need to wait for an external shutdown signal (Ctrl+C).
-3. **Wait for Ctrl+C (operator stop).** Hook `Console.CancelKeyPress` and set a `TaskCompletionSource` so the main task blocks until interrupted. Set `eventArgs.Cancel = true` to allow graceful shutdown. This mirrors ShuttleSim lines ~109-126.
-4. **On shutdown, cancel and await.** When Ctrl+C fires, call `stopping.Cancel()` (so all background work sees cancellation) and `await` the background tasks (e.g. `await heartbeatTask;` in ShuttleSim). If there are multiple tasks, await them all (e.g. `Task.WhenAll`).
-5. **Clean up.** Dispose buses, tokens, timers (use `using`). Do not leave brokers/listeners running.
+**Expect `OperationCanceledException` at this await.** `PeriodicTimer.WaitForNextTickAsync(token)` reports cancellation by *throwing* `OperationCanceledException`. `HeartbeatPublisher.RunAsync` does not catch it, so a bare `await heartbeatTask;` after `Cancel()` will throw. That is the normal way this loop ends — the heartbeat saying "I stopped because you told me to". I confirmed this in a scratch probe: `await` on a `RunAsync` built from `PeriodicTimer` + a cancelled token threw `OperationCanceledException`. To let Ctrl+C exit cleanly with code 0, catch exactly that case:
 
-**Line-level guidance for FleetManager/Program.cs:** Add the new `serve` branch in arg parsing (after the `move` branch). Implement `RunServeAsync()` similar in structure to `RunServerAsync()` in ShuttleSim but focused on the fleet side:
-- Load config (Messaging, FleetManager timeouts/liveness config if needed).
-- Connect bus and subscribe to `topics.AllStatuses` (and possibly acks) — when status arrives, deserialize and call `ShuttleHealth.RecordSeen(shuttleId, DateTime.UtcNow)` using the **manager's clock** (see lesson §2, rule 1).
-- If you start any periodic task (e.g. logging unresponsive shuttles on a timer), start it with `stopping.Token` and keep a task reference.
-- Wire Ctrl+C wait + cancel + await as above.
-- Return 0 on clean shutdown.
+```csharp
+    stopping.Cancel();
+    try
+    {
+        await heartbeatTask;
+    }
+    catch (OperationCanceledException) when (stopping.IsCancellationRequested)
+    {
+        // Expected: the heartbeat loop stopped because we cancelled it.
+    }
 
-**Important:** The "heartbeatTask" name in the question is the task for the long-running background operation. In ShuttleSim it's the publisher. In FleetManager serve mode, you may not have a publisher; you might have no periodic task at all if you only react to incoming messages — in that case you still need to wait for Ctrl+C and cancel, but there may be no `heartbeatTask` to await. The pattern is the same: identify what long-running work exists (subscriptions stay alive; message handling continues) and ensure clean shutdown. If nothing to await, just cancel and return.
+    return 0;
+```
 
-**What happens there (mechanics):** The serve mode runs until interrupted. The message bus subscriptions remain active; when `shuttleStatus` messages arrive (heartbeats or state changes), your status handler updates `ShuttleHealth.RecordSeen` with the current manager time. Ctrl+C signals the operator wants to stop; canceling `stopping` tells PeriodicTimers, async waits, and any cancellation-aware code to stop; awaiting tasks ensures they finish cleanup before process exits.
+The `when (stopping.IsCancellationRequested)` filter is important: it catches the shutdown you caused and lets a real, unexpected fault still surface.
 
-This placement keeps the M2 `move` demo intact and adds M5 serve behavior as a separate mode. That matches how ShuttleSim does it and how the lesson structures the work.
+### Why `using var stopping` matters
+
+`using var stopping` at `:104` means the `CancellationTokenSource` is **disposed** when `RunServerAsync` returns (the end of the method's scope). Two different jobs are in play:
+
+- `Cancel()` **signals** the waiters (the heartbeat loop). It is what actually tells the work to stop.
+- `Dispose()` (from `using`) **releases** the source's internal resources — its callback registrations and timer handle — instead of leaving them for the garbage collector.
+
+They are not substitutes. Drop the `using` and the source still works, but its cleanup time is unpredictable. Drop the `Cancel()` and the `using` disposes a source whose signal was never raised, so the loop is never told to stop. You need both, and `using var` orders them the right way: `Cancel()` runs first, `await heartbeatTask` drains the loop, and `Dispose()` happens as the method exits. The `using var` lives for the whole method, so it disposes **after** the await, never before it.
+
+**Do not leave a process running.** With these two lines in place, Ctrl+C stops the publisher, waits for it, and only then returns. That is what the lesson's "no process may be left running" requirement means at the code level.
 
 ---
 
