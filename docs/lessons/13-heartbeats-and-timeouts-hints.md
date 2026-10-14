@@ -152,7 +152,7 @@ cd src && dotnet test ShuttleFleet.slnx -v m --filter "Category!=Integration"
 
 ### Where it goes in `RunServerAsync()` (the starting state, before you edit it)
 
-This is a map of the file **as it is right now**, before you add anything. It is the `src/ShuttleSim/Program.cs` at HEAD (the version you start from). It has **no heartbeat code at all** — no interval read, no `CancellationTokenSource`, no `HeartbeatPublisher`, no `heartbeatTask`.
+This is a map of the file **as it was before you started lesson 13** (the version you started from, at commit `95213ae`). The shipped file at HEAD now contains the heartbeat code. The starting file has **no heartbeat code at all** — no interval read, no `CancellationTokenSource`, no `HeartbeatPublisher`, no `heartbeatTask`. Note: line numbers in this map refer to that starting file; the "What the two lines do" section later quotes the shipped file at HEAD.
 
 - `:67` `async Task<int> RunServerAsync()` starts.
 - `:69-78` loads configuration and reads `Shuttle:Id` and `Shuttle:StartLane`.
