@@ -118,3 +118,33 @@ This slice freezes M5's alarm vocabulary: a dedicated `alarm` kind at contract v
 3. **The honest mutation note is accurate.** The claim that keying the latch on the shuttle id alone does **not** turn `Two_shuttles_are_latched_independently` red is verified: with one code today, that test stays green under the mutation. Good that the lesson says so rather than overclaiming. The remaining five mutations all bite exactly as the lesson predicts.
 4. **Counts and the three-concept cap held.** The measured suite is exactly RC 0 / 8 `Passed!` / 0 `Failed!` / 100, with `Contracts.Tests` 7 and `FleetManager.Tests` 28. The lesson's three concepts (alarm/severity, rising-edge latch, contract v3) are each taught and each has a corresponding deliverable, with the four assignment requirements listed separately. No lesson change needed there.
 5. **Minor:** record 21 §9 and the lesson's verification table both state `/tmp/opencode/l14base` and `/tmp/opencode/l14toy` were deleted, but both directories still exist in `/tmp/opencode`. Cosmetic; worth a cleanup so the process claim is true.
+
+## Re-review (lesson 14)
+
+**Date:** 2026-10-14  
+**Reviewer:** Re-review of current working tree (post-owner fixes). Original review at commit 815e14b; current HEAD 815e14b with uncommitted changes. Owner fixes applied since first review: added `alarm` row to kinds table and topic line in `docs/contract/v3.md`; amended lesson 14 requirement 5 and Phase 6/9 gates; removed constructor lock from `AlarmEvaluator`; fixed trailing whitespace in `MessageTypes.cs`; changed AlarmMessageTests fixture to use `Detail: null`.
+
+**Verdict:** pass
+
+**Acceptance gates (verified):**
+- Phases 1-9: all PASS in current tree. Phase 6 now checks for the kinds table row `| AlarmMessage | alarm | alarm |` and the topic `{root}/{shuttleId}/alarm` (both present at v3.md:23 and v3.md:40). Phase 9 scope grep excludes `src/*.Tests` and returns nothing unexpected.
+- v2.md byte-unchanged (same SHA256 as at dc35900 and HEAD). Protected files untouched; carried-over contract shapes unchanged.
+- Build: clean (0 warnings / 0 errors). Pure suite: RC 0, 8 `Passed!`, 0 `Failed!`, 100 total; `Contracts.Tests` 7, `FleetManager.Tests` 28, `Messaging.Tests` 8 (renamed test present, stale `version_two` absent).
+
+**Regression checks:** `ContractVersion.Current` is `3` in code; renamed test `MessageEnvelopes_generate_a_unique_id_and_the_current_version` present; no stale `version_two` name anywhere in src. When `Current` was mutated to `2` in scratch, all Contracts.Tests, Messaging.Tests, and the full pure suite still passed (trade-off validated).
+
+**Mutation verification (on scratch copy):**
+- Remove latch Add guard → `A_condition_that_stays_true_does_not_raise_again` fails (red). ✓
+- Remove clear branch → `A_cleared_condition_can_raise_again` fails. ✓  
+- Hard-code severity → `The_configured_severity_is_carried_on_the_alarm` fails. ✓
+- Drop severity validation → `An_unknown_severity_is_rejected` fails. ✓
+- Wrong JSON field name → `Alarm_json_keeps_the_agreed_field_names` fails. ✓
+- Key latch on shuttle id only → `Two_shuttles_are_latched_independently` still passes (forward-proof as noted in lesson). ✓
+- Change `MessageTypes.Alarm` to "alert" → `Alarm_wire_names_match_the_contract` fails. ✓
+- Change `AlarmSeverities.Info` to "verbose" → wire-names test fails. ✓
+
+**Amendment adjudication:** The owner’s pushback to drop the version literal assertion from `Alarm_wire_names_match_the_contract` is accepted. The test correctly guards wire vocabulary; the version is already pinned by Phase 2 (`Current = 3`) and Phase 6 (`Version: 3`). The trade-off (CI-only dotnet test won’t catch accidental Current drift) is acknowledged and documented in the amended lesson. Separating concerns is the right call.
+
+**Blockers:** None. The v3.md topic and kinds row are present; the lesson amendment is in place. All acceptance criteria satisfied.
+
+**Recommendation:** PASS. No further changes required.

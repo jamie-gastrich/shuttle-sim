@@ -11,7 +11,7 @@ public sealed class AlarmMessageTests
         
         var sent = new AlarmMessage(
             new MessageEnvelope(ContractVersion.Current, MessageTypes.Alarm, "alarm-message-id", null, "fleet-manager", DateTime.UtcNow),
-            new Alarm("SH-01", AlarmSeverities.Warning, AlarmCodes.BlockedPath, "Pallet Not Detected"));
+            new Alarm("SH-01", AlarmSeverities.Warning, AlarmCodes.BlockedPath, null));
         var json = JsonSerializer.Serialize(sent);
         var received = JsonSerializer.Deserialize<AlarmMessage>(json);
         Assert.Equal(sent, received);
@@ -22,7 +22,7 @@ public sealed class AlarmMessageTests
     {
         var json = JsonSerializer.Serialize(new AlarmMessage(
             new MessageEnvelope(ContractVersion.Current, MessageTypes.Alarm, "alarm-message-id", null, "fleet-manager", DateTime.UtcNow),
-            new Alarm("SH-01", AlarmSeverities.Warning, AlarmCodes.BlockedPath, "Pallet Not Detected")));
+            new Alarm("SH-01", AlarmSeverities.Warning, AlarmCodes.BlockedPath, null)));
         Assert.Contains("\"Envelope\"", json);
         Assert.Contains("\"ShuttleId\"", json);
         Assert.Contains("\"Severity\"", json);

@@ -582,8 +582,10 @@ This slice does **not** wire the fleet manager's serve loop, does not subscribe 
 5. **Add the contract tests: `src/Contracts.Tests/AlarmMessageTests.cs`.** Three tests, with these exact names:
    - `AlarmMessage_survives_a_json_roundtrip` — serialize an `AlarmMessage` with `System.Text.Json`, deserialize it, assert equality.
    - `Alarm_json_keeps_the_agreed_field_names` — the JSON contains `"Envelope"`, `"ShuttleId"`, `"Severity"`, `"Code"`, and `"Detail"`.
-   - `Alarm_wire_names_match_the_contract` — `ContractVersion.Current` is `3`; `MessageTypes.Alarm` is `"alarm"`; the three `AlarmSeverities` values and the three `AlarmCodes` values are the agreed strings.
+   - `Alarm_wire_names_match_the_contract` — `MessageTypes.Alarm` is `"alarm"`; the three `AlarmSeverities` values and the three `AlarmCodes` values are the agreed strings. **Do not assert the version number here** (see the note below).
    - These tests are **pure**: no `Integration` trait, no database, no broker.
+
+   > **Why the version is not asserted in a test (amended after review 14; owner pushback accepted).** The wire *vocabulary* is what this test protects: the strings `"alarm"`, `info`/`warning`/`critical`, and the three codes. `ContractVersion.Current` is not an alarm wire name, and asserting the literal `3` here couples a vocabulary test to every deliberate, decision-recorded bump, forcing an unrelated edit each time. The version is already pinned by commands: Phase 2 greps the code (`Current = 3`) and Phase 6 greps the page (`Version: 3`). The trade-off, stated plainly: the bash gates are run by hand, while the container runs only `dotnet test`, so an *accidental* drift of `Current` would not be caught by CI alone. If that automation is ever wanted, add one explicitly named test (for example `Contract_wire_version_is_three`) so the bump checklist stays visible — do not fold it into this test.
 
 6. **Add the evaluator tests: `src/FleetManager.Tests/AlarmEvaluatorTests.cs`.** Seven tests, with these exact names:
    - `A_new_lost_communication_condition_raises_one_alarm`

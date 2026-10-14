@@ -7,15 +7,12 @@ public sealed class AlarmEvaluator
     private readonly string _lostCommunicationSeverity;
     private readonly object _lock = new();
     private readonly HashSet<(string ShuttleId, string Code)> _raised = new();
-    
+
     public AlarmEvaluator(string lostCommunicationSeverity)
     {
-        lock (_lock)
-        {
-            if (lostCommunicationSeverity is not (AlarmSeverities.Info or AlarmSeverities.Warning or AlarmSeverities.Critical))
-                throw new ArgumentOutOfRangeException(nameof(lostCommunicationSeverity));
-            _lostCommunicationSeverity = lostCommunicationSeverity;
-        }
+        if (lostCommunicationSeverity is not (AlarmSeverities.Info or AlarmSeverities.Warning or AlarmSeverities.Critical))
+            throw new ArgumentOutOfRangeException(nameof(lostCommunicationSeverity));
+        _lostCommunicationSeverity = lostCommunicationSeverity;
     }
     public IReadOnlyList<Alarm> Evaluate(string shuttleId, bool lostCommunication)
     {
