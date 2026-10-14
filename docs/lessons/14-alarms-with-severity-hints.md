@@ -146,3 +146,101 @@ public sealed class AlarmEvaluator
 - `v2.md` has `Version: 2` and no alarm/kind; `v3.md` has `Version: 3` and `alarm` with the topic.
 - `AlarmEvaluator` compiles and references `Contracts` but no I/O/clock.
 - The locks match `ShuttleHealth`'s discipline: one lock, one atomic operation per public method.
+
+---
+
+## Addendum — writing `AlarmEvaluatorTests` (owner question)
+
+**File and header.** Put it at `src/FleetManager.Tests/AlarmEvaluatorTests.cs`, matching `ShuttleHealthTests.cs`:
+
+```csharp
+using Contracts;
+
+namespace FleetManager;
+
+public class AlarmEvaluatorTests
+{
+    // [Fact] methods here
+}
+```
+
+- No `using Xunit;` — `FleetManager.Tests.csproj:18` has a global `<Using Include="Xunit" />`. `ShuttleHealthTests.cs` relies on the same.
+- `using Contracts;` is what lets you name `Alarm`, `AlarmCodes`, and `AlarmSeverities` (the test project references `Contracts`).
+- No `[Trait]` on any test. These are **pure**: no database, no broker. Phase 8 greps for `docker` in `src/*.Tests` and must print nothing.
+
+**The API under test** (record 21 §6):
+- `new AlarmEvaluator(string lostCommunicationSeverity)` — throws `ArgumentOutOfRangeException` unless the value is `AlarmSeverities.Info`, `Warning`, or `Critical`.
+- `IReadOnlyList<Alarm> Evaluate(string shuttleId, bool lostCommunication)` — one `Alarm` on the rising edge; empty while the condition holds, when it was never true, and after a clear.
+- `Alarm(string ShuttleId, string Severity, string Code, string? Detail)`. The lost-comm alarm is `Code = AlarmCodes.LostCommunication`, `Detail = null`, `Severity` = the constructor value.
+
+**The one gotcha that breaks most of these tests:** the latch is *stateful*. Every test below except the construction tests must call `Evaluate` more than once on **one** evaluator instance. If you build a fresh `AlarmEvaluator` between calls you reset the latch, every call looks like a rising edge, and the test proves nothing.
+
+**Test-by-test skeleton.** These are the arrange/act/assert; you still write the file.
+
+1. `A_new_lost_communication_condition_raises_one_alarm`
+```csharp
+var evaluator = new AlarmEvaluator(AlarmSeverities.Critical);
+var alarm = Assert.Single(evaluator.Evaluate("SH-01", true));
+Assert.Equal("SH-01", alarm.ShuttleId);
+Assert.Equal(AlarmCodes.LostCommunication, alarm.Code);
+Assert.Null(alarm.Detail);
+```
+
+2. `A_condition_that_stays_true_does_not_raise_again`
+```csharp
+var evaluator = new AlarmEvaluator(AlarmSeverities.Critical);
+Assert.Single(evaluator.Evaluate("SH-01", true));   // starts: raises
+Assert.Empty(evaluator.Evaluate("SH-01", true));    // holds: silent
+```
+
+3. `A_cleared_condition_can_raise_again`
+```csharp
+var evaluator = new AlarmEvaluator(AlarmSeverities.Critical);
+Assert.Single(evaluator.Evaluate("SH-01", true));
+Assert.Empty(evaluator.Evaluate("SH-01", false));   // clear re-arms
+Assert.Single(evaluator.Evaluate("SH-01", true));   // raises again
+```
+
+4. `A_healthy_shuttle_raises_nothing`
+```csharp
+var evaluator = new AlarmEvaluator(AlarmSeverities.Critical);
+Assert.Empty(evaluator.Evaluate("SH-01", false));
+Assert.Empty(evaluator.Evaluate("SH-01", false));   // and latches nothing
+```
+
+5. `Two_shuttles_are_latched_independently` — interleave two ids; this proves the latch key carries the shuttle id.
+```csharp
+var evaluator = new AlarmEvaluator(AlarmSeverities.Critical);
+Assert.Single(evaluator.Evaluate("SH-01", true));   // SH-01 raises
+Assert.Single(evaluator.Evaluate("SH-02", true));   // SH-02 raises too
+Assert.Empty(evaluator.Evaluate("SH-01", true));    // SH-01 still latched
+Assert.Empty(evaluator.Evaluate("SH-02", false));   // clear SH-02 only
+Assert.Empty(evaluator.Evaluate("SH-01", true));    // SH-01 untouched
+Assert.Single(evaluator.Evaluate("SH-02", true));   // SH-02 re-armed
+```
+
+6. `The_configured_severity_is_carried_on_the_alarm` — use a value that is *not* the one in `appsettings.json`, so a hard-coded default fails.
+```csharp
+var evaluator = new AlarmEvaluator(AlarmSeverities.Warning);
+var alarm = Assert.Single(evaluator.Evaluate("SH-01", true));
+Assert.Equal(AlarmSeverities.Warning, alarm.Severity);
+```
+(The appsettings value is `critical`; if the code hard-codes it, this goes red.)
+
+7. `An_unknown_severity_is_rejected`
+```csharp
+Assert.Throws<ArgumentOutOfRangeException>(() => new AlarmEvaluator("emergency"));
+```
+Add a second `Assert.Throws` for `""` if you want; both must throw.
+
+**Style, to match the repo.**
+- Use `const string ShuttleId = "SH-01";` when a test uses one id, like `ShuttleHealthTests.cs:8`.
+- `Assert.Single(list)` **returns** the one element — grab the alarm with it instead of `list[0]` plus a separate count assert. It fails usefully (one vs many).
+- Comments that explain the latch are welcome; comments that hand over the solution are not.
+
+**Which mutation each test catches** (from the lesson's list):
+- delete `_raised.Add(key)` → #2 goes red;
+- delete `_raised.Remove(key)` → #3 goes red;
+- hard-code the severity → #6 goes red;
+- drop the constructor validation → #7 goes red.
+Note the honest gap the lesson already states: keying the latch on the shuttle id *alone* instead of `(shuttleId, code)` does **not** turn #5 red today, because there is only one code. #5 is still worth writing — it is the forward-proof for the second code.
