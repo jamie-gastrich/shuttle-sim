@@ -5,7 +5,7 @@ using Contracts;
 public sealed class MessageEnvelopesTests
 {
 	[Fact]
-	public void MessageEnvelopes_generate_a_unique_id_and_version_two()
+	public void MessageEnvelopes_generate_a_unique_id_and_the_current_version()
 	{
 		var first = MessageEnvelopes.Create(MessageTypes.MoveCommand, "fleet-manager", DateTime.UtcNow);
 		var second = MessageEnvelopes.Create(MessageTypes.MoveCommand, "fleet-manager", DateTime.UtcNow);
