@@ -113,6 +113,33 @@ public sealed class ShuttleEndpointTests
         Assert.Equal(Start, statusMessage.Status.Timestamp);
     }
 
+    [Fact]
+    public async Task A_blocked_move_is_acknowledged_as_not_accepted_and_reports_a_fault_status()
+    {
+        var bus = new FakeBus();
+        var rack = new Rack(aisleCount: 2, lanesPerAisle: 2, slotsPerLane: 2);
+        rack.MarkBlocked("A02-L02");                       // inject the obstacle before the move
+        var timing = new ShuttleTiming(TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
+        var shuttle = new Shuttle("SH-01", rack, "A01-L01", timing);
+        var endpoint = CreateEndpoint(shuttle, bus);
+
+        await endpoint.HandleCommandAsync(
+            CommandPayload("SH-01", "A02-L02", "move-blocked"), Start, CancellationToken.None);
+
+        var acknowledgement = Assert.Single(bus.Published, message => message.Family == MessageFamily.Ack);
+        var ack = JsonSerializer.Deserialize<CommandAckMessage>(acknowledgement.Payload)!;
+        Assert.False(ack.Accepted);
+        Assert.Equal(FaultReasons.BlockedPath, ack.Reason);
+        Assert.Equal(FaultReasons.BlockedPath, shuttle.FaultReason);
+        var status = Assert.Single(bus.Published, message => message.Family == MessageFamily.Status);
+        var statusMessage = JsonSerializer.Deserialize<ShuttleStatusMessage>(status.Payload)!;
+        Assert.Equal("fault", statusMessage.Status.State);
+        Assert.Equal(FaultReasons.BlockedPath, statusMessage.Status.FaultReason);
+        Assert.Equal("A01-L01", statusMessage.Status.Position);
+        Assert.NotEqual("moving", statusMessage.Status.State);
+        Assert.NotEqual("idle", statusMessage.Status.State);
+    }
+
     private static Shuttle CreateShuttle()
     {
         var rack = new Rack(aisleCount: 2, lanesPerAisle: 2, slotsPerLane: 2);

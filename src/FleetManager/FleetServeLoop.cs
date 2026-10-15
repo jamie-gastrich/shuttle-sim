@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Contracts;
 using Messaging;
+using ShuttleCore;
 
 namespace FleetManager;
 
@@ -15,6 +16,7 @@ public sealed class FleetServeLoop
     private readonly Func<DateTime> _clock;
     private readonly object _knownLock = new();
     private readonly HashSet<string> _knownShuttles = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _faultCodes = new(StringComparer.Ordinal);
 
     public FleetServeLoop(IMessageBus bus, TopicScheme topics, ShuttleHealth health,
     AlarmEvaluator evaluator, string fleetManagerId, TimeSpan evaluationInterval, Func<DateTime> clock)
@@ -68,6 +70,12 @@ public sealed class FleetServeLoop
         lock (_knownLock)
         {
             _knownShuttles.Add(shuttleId);
+    
+            var code = status.Status.State == ShuttleState.Fault.ToWireName()
+                ? FaultAlarmCodes.ForReason(status.Status.FaultReason)
+                : null;
+            if (code is null) _faultCodes.Remove(shuttleId);
+            else _faultCodes[shuttleId] = code;
         }
         return Task.CompletedTask;
     }
@@ -75,15 +83,18 @@ public sealed class FleetServeLoop
     public async Task EvaluateAndPublishAsync(DateTime now, CancellationToken cancellationToken)
     {
         string[] ids;
+        Dictionary<string, string> faults;
         lock (_knownLock)
         {
             ids = _knownShuttles.ToArray();
+            faults = new Dictionary<string, string>(_faultCodes, StringComparer.Ordinal);
         }
 
         foreach (var id in ids)
         {
             var lost = _health.IsUnresponsive(id, now);
-            foreach (var alarm in _evaluator.Evaluate(id, lost))
+            var faultCode = faults.TryGetValue(id, out var c) ? c : null;
+            foreach (var alarm in _evaluator.Evaluate(id, lost, faultCode))
                 await PublishAlarmAsync(alarm, now, cancellationToken);
         }
     }

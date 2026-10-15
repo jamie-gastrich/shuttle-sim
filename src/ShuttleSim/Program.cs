@@ -76,8 +76,10 @@ async Task<int> RunServerAsync()
         ?? throw new InvalidOperationException("Shuttle:Id is missing.");
     var startLane = configuration["Shuttle:StartLane"]
         ?? throw new InvalidOperationException("Shuttle:StartLane is missing.");
+    var blockedLanes = configuration.GetSection("Shuttle:BlockedLanes").Get<string[]>() ?? Array.Empty<string>();
 
     var rack = new Rack(aisleCount: 2, lanesPerAisle: 2, slotsPerLane: 2);
+    foreach (var lane in blockedLanes) rack.MarkBlocked(lane);
     var timing = new ShuttleTiming(
         MovePerLane: TimeSpan.FromSeconds(5),
         Load: TimeSpan.FromSeconds(2),

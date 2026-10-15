@@ -13,6 +13,7 @@
     <ProjectReference Include="..\Messaging\Messaging.csproj" />
     <ProjectReference Include="..\MqttMessaging\MqttMessaging.csproj" />
     <ProjectReference Include="..\TrafficCore\TrafficCore.csproj" />
+    <ProjectReference Include="..\ShuttleCore\ShuttleCore.csproj" />
   </ItemGroup>
 
   <ItemGroup>

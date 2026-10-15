@@ -143,10 +143,12 @@ async Task<int> RunServeAsync()
         throw new InvalidOperationException("FleetManager:AlarmEvaluationIntervalMs must be positive.");
     var severity = configuration.GetValue<string>("FleetManager:LostCommunicationSeverity")
         ?? throw new InvalidOperationException("FleetManager:LostCommunicationSeverity is missing.");
+	var blockedPathSeverity = configuration.GetValue<string>("FleetManager:BlockedPathSeverity")
+    ?? throw new InvalidOperationException("FleetManager:BlockedPathSeverity is missing.");
 
     var topics = new TopicScheme(messaging.TopicRoot);
     var health = new ShuttleHealth(TimeSpan.FromMilliseconds(livenessMs));
-    var evaluator = new AlarmEvaluator(severity);
+    var evaluator = new AlarmEvaluator(severity, blockedPathSeverity);
     await using var bus = new MqttMessageBus(mqtt);
     await bus.ConnectAsync(CancellationToken.None);
     var loop = new FleetServeLoop(bus, topics, health, evaluator, messaging.FleetManagerId,

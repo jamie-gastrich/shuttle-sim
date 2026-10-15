@@ -70,6 +70,13 @@ public sealed class ShuttleEndpoint
             return;
         }
 
+        if (_shuttle.State == ShuttleState.Fault)
+        {
+            await AcknowledgeAsync(command, accepted: false, reason: _shuttle.FaultReason, now, cancellationToken);
+            await PublishStatusAsync(now, cancellationToken); 
+            return;
+        }
+
         _guard.MarkCompleted(messageId);
         await AcknowledgeAsync(command, accepted: true, reason: null, now, cancellationToken);
         await PublishStatusAsync("moving", now, cancellationToken);

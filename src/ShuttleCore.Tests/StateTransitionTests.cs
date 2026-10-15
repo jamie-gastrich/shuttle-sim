@@ -137,4 +137,36 @@ public class StateTransitionTests
 
         Assert.Equal(ShuttleState.Fault, shuttle.State);
     }
+
+    [Fact]
+    public void StartMove_across_a_blocked_lane_enters_fault_with_the_blocked_path_reason()
+    {
+        var rack = new Rack(aisleCount: 2, lanesPerAisle: 2, slotsPerLane: 2);
+        var shuttle = new Shuttle("SH-01", rack, "A01-L01", Timing);
+        rack.MarkBlocked("A01-L02");
+        var reason = "blocked path";
+
+        shuttle.StartMove("A01-L02", Start);
+        shuttle.RaiseFault(reason, Start);
+
+        Assert.Equal(ShuttleState.Fault, shuttle.State);
+        Assert.Equal("A01-L01", shuttle.Position);
+        Assert.Equal(reason, shuttle.FaultReason);
+    }
+
+    [Fact]
+    public void StartMove_through_a_lane_blocked_between_two_lanes_enters_fault ()
+    {
+        var rack = new Rack(aisleCount: 2, lanesPerAisle: 2, slotsPerLane: 2);
+        var shuttle = new Shuttle("SH-01", rack, "A01-L01", Timing);
+        rack.MarkBlocked("A02-L01"); // block the path between A01-L01 and A02-L02
+        var reason = "blocked path";
+
+        shuttle.StartMove("A02-L02", Start);
+        shuttle.RaiseFault(reason, Start);
+
+        Assert.Equal(ShuttleState.Fault, shuttle.State);
+        Assert.Equal("A01-L01", shuttle.Position);
+        Assert.Equal(reason, shuttle.FaultReason);
+    }
 }

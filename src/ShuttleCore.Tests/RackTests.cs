@@ -53,4 +53,18 @@ public class RackTests
         Assert.Null(rack.PalletAt("A01-L01-S01"));
     }
 
+    [Fact]
+    public void IsRouteBlocked_is_false_when_no_lane_on_the_route_is_blocked()
+    {
+        var rack = new Rack(aisleCount: 2, lanesPerAisle: 2, slotsPerLane: 2);
+        rack.MarkBlocked("A01-L02");
+        Assert.False(rack.IsRouteBlocked("A01-L01", "A02-L02"));
+    }
+
+    [Fact]
+    public void MarkBlocked_for_an_unknown_lane_is_rejected()
+    {
+        var rack = new Rack(aisleCount: 2, lanesPerAisle: 2, slotsPerLane: 2);
+        Assert.Throws<ArgumentException>(() => rack.MarkBlocked("A01-L03"));
+    }
 }

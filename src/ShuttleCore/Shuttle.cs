@@ -36,6 +36,11 @@ public sealed class Shuttle
         EnsureInOrder(now);
         EnsureState(ShuttleState.Idle, "start a move");
         if (!_rack.IsLane(toLane)) throw new ShuttleRejectedException($"unknown lane {toLane}");
+        if (_rack.IsRouteBlocked(_position, toLane))
+        {
+            RaiseFault(FaultReasons.BlockedPath, now);
+            return; // State == Fault, position unchanged; the caller inspects State
+        }
         _moveToLane = toLane;
         _moveStartedAt = now;
         _state = ShuttleState.Moving;

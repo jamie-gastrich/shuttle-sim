@@ -41,6 +41,7 @@ public sealed class Rack
     public int SlotsPerLane { get; }
     public IEnumerable<string> LaneId => _laneOrdinals.Keys;
     public IEnumerable<string> SlotId => _palletsBySlot.Keys;
+    private readonly HashSet<string> _blockedLanes = new(StringComparer.Ordinal);
 
     public bool IsLane(string laneId) => _laneOrdinals.ContainsKey(laneId);
     public bool IsSlot(string slotId) => _palletsBySlot.ContainsKey(slotId);
@@ -74,4 +75,25 @@ public sealed class Rack
     private int Ordinal(string laneId) => _laneOrdinals.TryGetValue(laneId, out var ordinal)
         ? ordinal
         : throw new ArgumentException($"unknown lane {laneId}", nameof(laneId));
+
+    public void MarkBlocked(string laneId)      
+    {
+        if (!_laneOrdinals.ContainsKey(laneId)) throw new ArgumentException($"unknown lane {laneId}");
+        _blockedLanes.Add(laneId);
+    }
+
+    public bool IsBlocked(string laneId)
+    {
+        return _blockedLanes.Contains(laneId);
+    }
+
+    public bool IsRouteBlocked(string fromLane, string toLane)
+    {
+        var start = Math.Min(Ordinal(fromLane), Ordinal(toLane));
+        var end = Math.Max(Ordinal(fromLane), Ordinal(toLane));
+        foreach (var blocked in _blockedLanes)
+            if (_laneOrdinals[blocked] >= start && _laneOrdinals[blocked] <= end)
+                return true;
+        return false;
+    }
 }
