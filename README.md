@@ -33,6 +33,83 @@ src/                    the code
 docker/                 broker, database, and environment
 ```
 
+## What ships in src/
+
+Eight small projects: six libraries (pure decision logic, no I/O, so each can be tested alone) and two `.Exe` apps that wire the libraries to a real broker and database.
+
+The two apps never call each other directly. They both connect to the MQTT broker and exchange messages on topics, so either side can be restarted without the other noticing:
+
+```text
+  ┌────────────────────┐                 ┌────────────────────┐
+  │     ShuttleSim     │                 │    FleetManager    │
+  │      (.Exe)        │                 │      (.Exe)        │
+  │  one process per   │                 │  fleet manager:    │
+  │  shuttle; emits    │                 │  liveness, alarms, │
+  │  heartbeat+status  │                 │  commands          │
+  └─────────┬──────────┘                 └─────┬────────┬─────┘
+            │                                  │        │
+            │      ┌────────────────────┐      │        │
+            └─────►│    MQTT broker     │◄─────┘        │
+                   │    (mosquitto)     │               │
+                   └────────────────────┘               ▼
+                                              ┌──────────────────┐
+                                              │     Postgres     │
+                                              │   tasks + board  │
+                                              │  survive restart │
+                                              └──────────────────┘
+
+  messages on the broker:
+    shuttle/{id}/command    manager ──► shuttle   (move / load / unload)
+    shuttle/{id}/status     shuttle ──► manager   (position and state)
+    shuttle/{id}/ack        shuttle ──► manager   (command confirmed)
+    shuttle/{id}/alarm      manager ──► WMS       (something is wrong)
+```
+
+The projects are also built from one another. A project may only depend on projects below it:
+
+```text
+  ┌─ no dependencies ────────────────────────────────────────────────┐
+  │   Contracts          ShuttleCore           FleetCore             │
+  │   wire shapes        shuttle state         tasks + board         │
+  └──────────────────────────────────────────────────────────────────┘
+                                │
+  ┌─ pure logic and the bus seam ────────────────────────────────────┐
+  │   Messaging    ── uses Contracts                                 │
+  │   TrafficCore  ── uses ShuttleCore                               │
+  └──────────────────────────────────────────────────────────────────┘
+                                │
+  ┌─ transport ──────────────────────────────────────────────────────┐
+  │   MqttMessaging ── uses Contracts, Messaging                     │
+  └──────────────────────────────────────────────────────────────────┘
+                                │
+  ┌─ apps (.Exe) — the only projects that touch I/O ─────────────────┐
+  │   FleetManager ── uses FleetCore, Contracts, Messaging,          │
+  │                   MqttMessaging, TrafficCore                     │
+  │   ShuttleSim   ── uses ShuttleCore, Contracts, Messaging,        │
+  │                   MqttMessaging                                  │
+  └──────────────────────────────────────────────────────────────────┘
+```
+
+The table gives the same picture project by project, plus what each one is:
+
+| Folder (project) | Depends on (projectRefs) | Talks to | What it is |
+|---|---|---|---|
+| `Contracts` | — | wire shapes | Shared message types, envelope fields, `MessageTypes`, `ContractVersion` |
+| `ShuttleCore` | — | nothing | Shuttle state machine (`idle/moving/...`), rack, track, timings, pure |
+| `TrafficCore` | `ShuttleCore` | nothing | Lane-segment reservations, `CanMove`/`CommitMove` |
+| `FleetCore` | — | nothing | Tasks, `TaskBoard`, repository interface (pure) |
+| `Messaging` | `Contracts` | — | `IMessageBus`, `TopicScheme`, envelopes, retry, idempotency (seam only) |
+| `MqttMessaging` | `Contracts`, `Messaging` | broker (MQTTnet) | Concrete MQTT bus: connect, pub/sub, QoS from config |
+| `FleetManager` **(app)** | `FleetCore`, `Contracts`, `Messaging`, `MqttMessaging`, `TrafficCore` | broker + Postgres | Manager console. Today: `move` (send + retry a command) and `serve` (liveness + alarms). Assignment and traffic wiring arrive in later slices. |
+| `ShuttleSim` **(app)** | `ShuttleCore`, `Contracts`, `Messaging`, `MqttMessaging` | broker | One simulated shuttle per process: accepts commands, moves, emits status + heartbeat |
+| `* .Tests` | their project + a few deps | test frameworks | Direct test project for each project |
+
+`FleetManager` and `ShuttleSim` are the only programs that touch I/O. Everything under them (state machines, traffic, tasks, messaging contracts) is pure C# with no broker or database, so it unit-tests in milliseconds with no services running.
+
+### Folder-by-folder READMEs
+
+Each `src/*/README.md` has a short **Overview** section: what the project is, what it depends on, what depends on it, and how messages flow in and out (for the I/O projects) or who calls it and what comes back (for the pure projects). Start reading in `Contracts`, then `Messaging`, then either `ShuttleCore`→`ShuttleSim` (the shuttle side) or `FleetCore`/`TrafficCore`→`FleetManager` (the manager side). Then you can read top-down from either entry point.
+
 ## Build and test
 
 Start the supporting services (broker + database) needed for integration tests:
@@ -61,14 +138,13 @@ OR run all except for integration tests
 ```
 cd src
 dotnet build
-dotnet dotnet test --filter "Category!=Integration"
+dotnet test --filter "Category!=Integration"
 cd ..
 ```
-
 ### Verification notes
 Commands the reviewer ran to confirm each `done` milestone go here.
 
-**M5** (in progress) — slices reviewed so far: lesson 13 (heartbeats, lastSeenAt, timeout window) `docs/reviews/13-heartbeats-and-timeouts.md` ([record 20](docs/decisions/20-liveness-heartbeats-and-timeouts.md)); lesson 14 (alarms with severity, v3 `alarm` kind, rising-edge latch) `docs/reviews/14-alarms-with-severity.md` ([record 21](docs/decisions/21-alarms-with-severity.md)). From `src/`: `cd src && dotnet test ShuttleFleet.slnx -v m --filter "Category!=Integration"` → RC 0, 8 `Passed!`, 0 `Failed!`, 100 tests (Contracts.Tests 7, FleetManager.Tests 28). `AlarmEvaluator` currently raises only `lostCommunication`; `blockedPath` and `palletNotDetected` are defined in `src/Contracts/AlarmCodes.cs` but not raised. Not yet done: fault injection/raising for `blockedPath`/`palletNotDetected`; reassigning a failed shuttle’s work; operator-acknowledged recovery; and the M5 done-when proof that every injected fault leads to the right alarm and right recovery and saved state never loses or duplicates a pallet (recovery/reconciliation are later slices).
+**M5** (in progress) — slices reviewed so far: lesson 13 (heartbeats, lastSeenAt, timeout window) `docs/reviews/13-heartbeats-and-timeouts.md` ([record 20](docs/decisions/20-liveness-heartbeats-and-timeouts.md)); lesson 14 (alarms with severity, v3 `alarm` kind, rising-edge latch) `docs/reviews/14-alarms-with-severity.md` ([record 21](docs/decisions/21-alarms-with-severity.md)); lesson 15 (serve loop and alarm publish, `Alarm` transport lane, `serve` command) `docs/reviews/15-serve-loop-and-alarm-publish.md` ([record 22](docs/decisions/22-serve-loop-and-alarm-publish.md)). From `src/`: `cd src && dotnet build` → exit 0, 0 warnings/errors; `cd src && dotnet test ShuttleFleet.slnx -v m --filter "Category!=Integration"` → RC 0, 8 `Passed!`, 0 `Failed!`, 109 tests (Contracts.Tests 7, Messaging.Tests 9, FleetManager.Tests 36); with broker+database up `cd src && dotnet test ShuttleFleet.slnx -v m --filter "Category=Integration"` → RC 0, 3 `Passed!`, 0 `Failed!`. Mutations (a)-(i) all turned red, including the three key fixes (d) distinct fixture id, (g) version/MessageType/blank-id/blank-MessageId variants, and (i) the new clock-domain sweep test. `AlarmEvaluator` currently raises only `lostCommunication`; `blockedPath` and `palletNotDetected` are defined in `src/Contracts/AlarmCodes.cs` but not raised. Not yet done: fault injection/raising for `blockedPath`/`palletNotDetected`; reassigning a failed shuttle’s work; operator-acknowledged recovery; and the M5 done-when proof that every injected fault leads to the right alarm and right recovery and saved state never loses or duplicates a pallet (recovery/reconciliation are later slices).
 
 **M4** — lesson 12 wiring slice reviewed 2026-10-13, `docs/reviews/12-run-loop-wiring.md`. Verified M4 done-when: a stress scenario with four or more shuttles runs with no collisions and no permanent deadlock. From `src/`: `cd src && dotnet test ShuttleFleet.slnx --filter "Category!=Integration"` → RC 0, 8 `Passed!`, 0 `Failed!`, 84 tests, `FleetManager.Tests` 16. Stress test `Four_or_more_shuttles_finish_with_no_collisions_and_no_deadlock` (4+ shuttles, overlapping routes) drives tick-by-tick and calls `AssertNoSharedLanes` after every tick; mutations confirmed the stress/collision checks are load-bearing. Rule is documented in `docs/decisions/19-run-loop-wiring-and-concurrency.md`. Known limitation recorded in review 12: the gate is not wired into `FleetManager/Program.cs` (deferred to a later wiring slice); the delivered slice demonstrates the run loop behavior under test.
 
