@@ -334,6 +334,184 @@ Both constructors above were read from `src/Contracts/ShuttleStatus.cs` and `src
 
 ---
 
+## Worked example (teaching artifact — not the assignment)
+
+This section shows the full working shape of the two tests you are stuck on. It is a teaching artifact on paper. You still write your own tests. The code below was compiled and run in a scratch project on 2026-10-14. Both tests passed. The shapes match the Tier 3 shapes above; no Tier 3 shape needed correcting.
+
+### The corrected pure-test harness
+
+**Root cause (a): `_knownShuttles` is only populated by `HandleStatusAsync`.**
+
+`health.IsUnresponsive("SH-01", ...)` is a query. It asks a question. It changes no state. It does not add `"SH-01"` to `_knownShuttles`. The sweep iterates `_knownShuttles`. An empty set means nothing is published.
+
+The only way an id enters `_knownShuttles` is through `HandleStatusAsync`. That method is the bus's receive handler. A pure test has no bus, so you must call the captured handler yourself.
+
+**Root cause (b): the clock must line up.**
+
+`HandleStatusAsync` calls `_health.RecordSeen(shuttleId, _clock())`. The sweep calls `_health.IsUnresponsive(id, now)`. Both must read the same clock. The test captures `now` in a variable and hands `() => now` to the loop. When the test advances `now`, both the record and the sweep see the new value.
+
+Your current code sweeps with `now = Start`. But the status was never fed through the handler, so `_knownShuttles` is empty. Even if it were not empty, `Start` is not past the window. The sweep time must be past the window.
+
+**The corrected test:**
+
+```csharp
+[Fact]
+public async Task A_lost_shuttle_publishes_one_alarm_with_the_tick_clock_and_configured_sender()
+{
+    var bus = new RecordingBus();
+    var topics = new TopicScheme("shuttle");
+    var health = new ShuttleHealth(TimeSpan.FromSeconds(3));
+    var evaluator = new AlarmEvaluator(AlarmSeverities.Critical);
+
+    var now = Start;
+    var loop = new FleetServeLoop(bus, topics, health, evaluator, "fleet-manager",
+        TimeSpan.FromSeconds(1), () => now);
+
+    await loop.SubscribeAsync(CancellationToken.None);
+    await bus.Handler!(new MessageReceived(topics.Status("SH-01"), StatusJson("SH-01", now)),
+        CancellationToken.None);
+
+    now = Start.AddSeconds(4);
+    await loop.EvaluateAndPublishAsync(now, CancellationToken.None);
+
+    Assert.Single(bus.Published);
+    var (topic, payload, family) = bus.Published[0];
+    Assert.Equal("shuttle/SH-01/alarm", topic);
+    Assert.Equal(MessageFamily.Alarm, family);
+    var alarm = JsonSerializer.Deserialize<AlarmMessage>(payload);
+    Assert.NotNull(alarm);
+    Assert.Equal(ContractVersion.Current, alarm!.Envelope.ContractVersion);
+    Assert.Equal(MessageTypes.Alarm, alarm.Envelope.MessageType);
+    Assert.Equal("fleet-manager", alarm.Envelope.SenderId);
+    Assert.Null(alarm.Envelope.CorrelationId);
+    Assert.Equal(now, alarm.Envelope.SentAt);
+    Assert.Equal("SH-01", alarm.Alarm.ShuttleId);
+    Assert.Equal(AlarmCodes.LostCommunication, alarm.Alarm.Code);
+    Assert.Equal(AlarmSeverities.Critical, alarm.Alarm.Severity);
+    Assert.Null(alarm.Alarm.Detail);
+}
+```
+
+**What each part does:**
+
+- `var now = Start;` — a captured variable. The test advances it. It is not a literal in the assertions.
+- `() => now` — the clock. Both `RecordSeen` and the sweep read this.
+- `await loop.SubscribeAsync(...)` — captures the handler in `bus.Handler`.
+- `await bus.Handler!(...)` — feeds a status through the handler. This is the only way to add `"SH-01"` to `_knownShuttles` in a pure test. The `!` is a null-forgiving operator: `Handler` is nullable until `SubscribeAsync` sets it.
+- `now = Start.AddSeconds(4)` — advances past the 3-second window. `IsUnresponsive` now returns `true`.
+- `await loop.EvaluateAndPublishAsync(now, ...)` — one sweep. The evaluator's latch is empty, so it returns one alarm.
+- The assertions check the full envelope and body, exactly as requirement 5 lists.
+
+The `StatusJson` helper is the Tier 3 fixture. It builds a `ShuttleStatusMessage` with a current-version envelope.
+
+### The integration test, fully worked
+
+Your current file is a bare method at namespace level. It has no class, no `[Fact]`, no `async Task`. It will not compile or discover. Here is the full shape:
+
+```csharp
+using System.Text.Json;
+using Contracts;
+using Messaging;
+using MqttMessaging;
+using MQTTnet;
+
+namespace FleetManager.Tests;
+
+[Trait("Category", "Integration")]
+public class FleetServeLoopIntegrationTests
+{
+    [Fact]
+    public async Task An_alarm_reaches_the_broker_on_the_shuttle_topic()
+    {
+        var host = Environment.GetEnvironmentVariable("MQTT_HOST") ?? "127.0.0.1";
+        var port = int.Parse(Environment.GetEnvironmentVariable("MQTT_HOST_PORT") ?? "1883");
+
+        var listenerOptions = new MqttMessageBusOptions(host, port, "fleet-manager-test-listener",
+            new QosOptions(MqttQualityOfService.AtLeastOnce, MqttQualityOfService.AtLeastOnce,
+                MqttQualityOfService.AtLeastOnce, MqttQualityOfService.AtLeastOnce));
+        var loopOptions = new MqttMessageBusOptions(host, port, "fleet-manager-test-loop",
+            new QosOptions(MqttQualityOfService.AtLeastOnce, MqttQualityOfService.AtLeastOnce,
+                MqttQualityOfService.AtLeastOnce, MqttQualityOfService.AtLeastOnce));
+
+        var topics = new TopicScheme("shuttle");
+
+        await using var listener = new MqttMessageBus(listenerOptions);
+        await using var loopBus = new MqttMessageBus(loopOptions);
+        await listener.ConnectAsync(CancellationToken.None);
+        await loopBus.ConnectAsync(CancellationToken.None);
+
+        var received = new TaskCompletionSource<AlarmMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        await listener.SubscribeAsync(topics.AllAlarms, MessageFamily.Alarm, (message, _) =>
+        {
+            received.TrySetResult(JsonSerializer.Deserialize<AlarmMessage>(message.Payload)!);
+            return Task.CompletedTask;
+        }, CancellationToken.None);
+
+        var health = new ShuttleHealth(TimeSpan.FromSeconds(3));
+        var evaluator = new AlarmEvaluator(AlarmSeverities.Critical);
+        var now = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var loop = new FleetServeLoop(loopBus, topics, health, evaluator, "fleet-manager",
+            TimeSpan.FromSeconds(1), () => now);
+
+        await loop.HandleStatusAsync(new MessageReceived(topics.Status("SH-01"),
+            StatusJson("SH-01", now)), CancellationToken.None);
+
+        now = now.AddSeconds(4);
+        await loop.EvaluateAndPublishAsync(now, CancellationToken.None);
+
+        var alarm = await received.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(AlarmCodes.LostCommunication, alarm.Alarm.Code);
+    }
+
+    static string StatusJson(string shuttleId, DateTime sentAt) => JsonSerializer.Serialize(
+        new ShuttleStatusMessage(
+            new MessageEnvelope(ContractVersion.Current, MessageTypes.ShuttleStatus,
+                Guid.NewGuid().ToString(), null, shuttleId, sentAt),
+            new ShuttleStatus(shuttleId, "idle", "A01-L01", sentAt, null)));
+}
+```
+
+**What each part does and why:**
+
+- **Two `MqttMessageBus` instances with distinct ClientIds.** MQTT gives each connection a ClientId. If two clients use the same ClientId, the broker disconnects the older one. The listener and the loop bus are two connections, so they need two ClientIds. `"fleet-manager-test-listener"` and `"fleet-manager-test-loop"` are test fixtures, not production literals. The existing `MqttMessageBusTests` uses the same pattern.
+
+- **Host and port from environment, not a literal.** The test reads `MQTT_HOST` and `MQTT_HOST_PORT` with defaults `127.0.0.1` and `1883`. These are the same defaults the app's `appsettings.json` uses. The `docker/compose.yml` broker maps `MQTT_HOST_PORT` to the host port. This matches the `TestDatabase.BuildConnectionString` pattern in the same test project.
+
+- **Subscribe before publish.** The broker does not retain alarm messages. The `MqttMessageBus` publish does not set the retain flag, and the mosquitto config does not enable it. A subscriber that subscribes after the publish misses the message. The listener subscribes to `topics.AllAlarms` with `MessageFamily.Alarm` before the loop publishes.
+
+- **Four-member `QosOptions`.** The record has four positional members: `Command`, `Ack`, `Status`, `Alarm`. All four are `MqttQualityOfService.AtLeastOnce` (QoS 1). The alarm publishes at `QosOptions.Alarm`. This matches the existing `MqttMessageBusTests` pattern.
+
+- **`await loop.HandleStatusAsync(...)` directly.** No wire status is needed. The test calls the loop's public method with a `MessageReceived` wrapping the status JSON. This adds `"SH-01"` to the loop's `_knownShuttles` and records the seen time.
+
+- **Advance the fixed clock past the window.** The `ShuttleHealth` window is 3 seconds. The test sweeps at `Start.AddSeconds(4)`. `IsUnresponsive` returns `true`.
+
+- **Await with a timeout.** `received.Task.WaitAsync(TimeSpan.FromSeconds(5))` waits for the listener's handler to fire. If the alarm never arrives, the test fails with a timeout rather than hanging.
+
+- **`await using` disposes both buses.** `MqttMessageBus.DisposeAsync` disconnects from the broker. `await using` ensures both buses are disposed even if the test fails.
+
+- **The `[Trait("Category", "Integration")]` attribute.** The pure test run excludes this test with `--filter "Category!=Integration"`. The test needs the broker up. Start it with `docker compose -f docker/compose.yml up -d broker`. The test does not mention or start Docker.
+
+### Why this test is worth it
+
+The pure tests prove the decision composition: the loop calls the right pure objects with the right inputs and publishes the right shape. But the pure tests use a fake bus. They cannot prove the alarm actually leaves the process.
+
+The integration test proves the transport lane. It connects the real `MqttMessageBus` to the broker. It subscribes a listener on the wildcard topic. It asserts the alarm arrives on the wire with the right `Code`. This is the only test that would catch a break in the `MessageFamily.Alarm` to QoS binding, the topic branch, or the serialize-and-publish path.
+
+The mutation list above is the proof. The pure tests catch mutations in the decision logic: wrong family, wrong topic, wrong clock, hard-coded sender. The integration test catches a mutation that breaks the transport itself. For example, if the `MessageFamily.Alarm` arm were deleted from the bus switch, the pure tests would still pass (they use a fake), but the integration test would fail with an `ArgumentOutOfRangeException` on the publish.
+
+### Verification
+
+The code in this section was compiled and run in a scratch xUnit project on 2026-10-14. Both tests passed:
+
+- `A_lost_shuttle_publishes_one_alarm_with_the_tick_clock_and_configured_sender` — passed.
+- `An_alarm_reaches_the_broker_on_the_shuttle_topic` — passed (against an in-process MQTTnet server; the docker-broker run itself is not yet verified in this environment).
+
+Your current broken approach was also verified: calling `health.IsUnresponsive(...)` directly and sweeping with `now = Start` publishes nothing. This confirms both root causes.
+
+Not yet verified: the integration test against the docker Mosquitto broker. Docker is not available in the environment where this was verified. The test shape is identical; only the host/port source differs (environment variables pointing at the in-process server vs. the docker broker).
+
+---
+
 ## Final sanity check
 
 - `FleetManager.Tests` shows **35**, `Messaging.Tests` shows **9**; total pure **108**; 8 `Passed!`, 0 `Failed!`, RC 0.
