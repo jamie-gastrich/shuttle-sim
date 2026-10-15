@@ -5,4 +5,5 @@ public enum MessageFamily
     Command, 
     Ack, 
     Status,
+    Alarm,
 }

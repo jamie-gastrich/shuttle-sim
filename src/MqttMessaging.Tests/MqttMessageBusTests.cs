@@ -28,6 +28,7 @@ public sealed class MqttMessageBusTests
                 new QosOptions(
                     MqttQualityOfService.AtLeastOnce,
                     MqttQualityOfService.AtLeastOnce,
+                    MqttQualityOfService.AtLeastOnce,
                     MqttQualityOfService.AtLeastOnce)));
 
             var received = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -72,6 +73,7 @@ public sealed class MqttMessageBusTests
                 serverOptions.DefaultEndpointOptions.Port,
                 "mqtt-test-client-2",
                 new QosOptions(
+                    MqttQualityOfService.AtLeastOnce,
                     MqttQualityOfService.AtLeastOnce,
                     MqttQualityOfService.AtLeastOnce,
                     MqttQualityOfService.AtLeastOnce)));

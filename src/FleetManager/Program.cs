@@ -11,6 +11,9 @@ if (args.Length == 0)
 	return 0;
 }
 
+if (args.Length == 1 && args[0] == "serve")
+    return await RunServeAsync();
+
 if (args.Length != 3 || args[0] != "move")
 {
 	Console.Error.WriteLine("Usage: FleetManager move <shuttleId> <toLane>");
@@ -116,4 +119,65 @@ async Task<int> RunMoveAsync(string shuttleId, string toLane)
 
 		return Task.CompletedTask;
 	}
+}
+
+async Task<int> RunServeAsync()
+{
+    var configuration = new ConfigurationBuilder()
+        .SetBasePath(AppContext.BaseDirectory)
+        .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false)
+        .AddEnvironmentVariables()
+        .Build();
+
+    var messagingSection = configuration.GetSection("Messaging");
+    var messaging = messagingSection.Get<MessagingOptions>()
+        ?? throw new InvalidOperationException("Messaging configuration is missing.");
+    var mqtt = messagingSection.Get<MqttMessageBusOptions>()
+        ?? throw new InvalidOperationException("MQTT configuration is missing.");
+
+    var livenessMs = configuration.GetValue<int>("FleetManager:LivenessTimeoutMs");
+    if (livenessMs < 1)
+        throw new InvalidOperationException("FleetManager:LivenessTimeoutMs must be positive.");
+    var intervalMs = configuration.GetValue<int>("FleetManager:AlarmEvaluationIntervalMs");
+    if (intervalMs < 1)
+        throw new InvalidOperationException("FleetManager:AlarmEvaluationIntervalMs must be positive.");
+    var severity = configuration.GetValue<string>("FleetManager:LostCommunicationSeverity")
+        ?? throw new InvalidOperationException("FleetManager:LostCommunicationSeverity is missing.");
+
+    var topics = new TopicScheme(messaging.TopicRoot);
+    var health = new ShuttleHealth(TimeSpan.FromMilliseconds(livenessMs));
+    var evaluator = new AlarmEvaluator(severity);
+    await using var bus = new MqttMessageBus(mqtt);
+    await bus.ConnectAsync(CancellationToken.None);
+    var loop = new FleetServeLoop(bus, topics, health, evaluator, messaging.FleetManagerId,
+        TimeSpan.FromMilliseconds(intervalMs), () => DateTime.UtcNow);
+
+    Console.WriteLine($"Fleet manager serving on {topics.AllStatuses}");
+    using var stopping = new CancellationTokenSource();
+    var stopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    ConsoleCancelEventHandler cancelHandler = (_, eventArgs) =>
+    {
+        eventArgs.Cancel = true;
+        stopped.TrySetResult();
+    };
+    Console.CancelKeyPress += cancelHandler;
+    var loopTask = loop.RunAsync(stopping.Token);
+    try
+    {
+        await stopped.Task;
+    }
+    finally
+    {
+        Console.CancelKeyPress -= cancelHandler;
+    }
+    stopping.Cancel();
+    try
+    {
+        await loopTask;
+    }
+    catch (OperationCanceledException) when (stopping.IsCancellationRequested)
+    {
+        // Expected: the loop stopped because we cancelled it.
+    }
+    return 0;
 }

@@ -16,4 +16,6 @@ public sealed class TopicScheme
     public string Status(string shuttleId) => $"{_root}/{shuttleId}/status";
     public string AllAcks => $"{_root}/+/ack";
     public string AllStatuses => $"{_root}/+/status";
+    public string Alarm(string shuttleId) => $"{_root}/{shuttleId}/alarm";
+    public string AllAlarms => $"{_root}/+/alarm";
 }

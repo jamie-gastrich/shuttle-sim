@@ -21,4 +21,13 @@ public sealed class TopicSchemeTests
 		Assert.Equal("shuttle/+/ack", topics.AllAcks);
 		Assert.Equal("shuttle/+/status", topics.AllStatuses);
 	}
+
+	[Fact]
+	public void TopicScheme_alarm_topics_use_the_per_shuttle_branch_and_the_wildcard()
+	{
+		var topics = new TopicScheme("shuttle");
+
+		Assert.Equal("shuttle/SH-01/alarm", topics.Alarm("SH-01"));
+		Assert.Equal("shuttle/+/alarm", topics.AllAlarms);
+	}	
 }
