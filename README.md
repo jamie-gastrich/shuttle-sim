@@ -39,10 +39,14 @@ Start the supporting services (broker + database) needed for integration tests:
 
 ```
 docker compose -f docker/compose.yml up -d
+```
+```
 cd src
 dotnet build
 dotnet test
 cd ..
+```
+```
 docker build -f docker/Dockerfile.build -t shuttle-fleet-build .
 docker run --rm shuttle-fleet-build
 ```
@@ -55,7 +59,6 @@ docker compose -f docker/compose.yml down
 
 OR run all except for integration tests
 ```
-docker compose -f docker/compose.yml up -d
 cd src
 dotnet build
 dotnet dotnet test --filter "Category!=Integration"
