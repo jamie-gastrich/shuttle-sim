@@ -47,7 +47,7 @@ public sealed class FleetServeLoopTests
         var bus = new RecordingBus();
         var topics = new TopicScheme("shuttle");
         var health = new ShuttleHealth(TimeSpan.FromSeconds(30));
-        var evaluator = new AlarmEvaluator(AlarmSeverities.Critical, "");
+        var evaluator = new AlarmEvaluator(AlarmSeverities.Critical, AlarmSeverities.Warning);
 
         Assert.Throws<ArgumentException>(() => new FleetServeLoop(bus, topics, health, evaluator, "", TimeSpan.FromSeconds(1), () => Start));
         Assert.Throws<ArgumentOutOfRangeException>(() => new FleetServeLoop(bus, topics, health, evaluator, "fleet-manager", TimeSpan.Zero, () => Start));
@@ -59,7 +59,7 @@ public sealed class FleetServeLoopTests
         var bus = new RecordingBus();
         var topics = new TopicScheme("shuttle");
         var health = new ShuttleHealth(TimeSpan.FromSeconds(30));
-        var evaluator = new AlarmEvaluator(AlarmSeverities.Critical, "");
+        var evaluator = new AlarmEvaluator(AlarmSeverities.Critical, AlarmSeverities.Warning);
 
         var loop = new FleetServeLoop(bus, topics, health, evaluator, "fleet-manager", TimeSpan.FromSeconds(1), () => Start);
         await loop.SubscribeAsync(CancellationToken.None);
@@ -74,7 +74,7 @@ public sealed class FleetServeLoopTests
         var bus = new RecordingBus();
         var topics = new TopicScheme("shuttle");
         var health = new ShuttleHealth(TimeSpan.FromSeconds(30));
-        var evaluator = new AlarmEvaluator(AlarmSeverities.Critical, "");
+        var evaluator = new AlarmEvaluator(AlarmSeverities.Critical, AlarmSeverities.Warning);
         const string fleetManagerId = "fm-test-01";  // distinct from any literal in test
 
         var loop = new FleetServeLoop(bus, topics, health, evaluator, fleetManagerId, TimeSpan.FromSeconds(1), () => Start);
@@ -109,7 +109,7 @@ public sealed class FleetServeLoopTests
         var bus = new RecordingBus();
         var topics = new TopicScheme("shuttle");
         var health = new ShuttleHealth(TimeSpan.FromSeconds(30));
-        var evaluator = new AlarmEvaluator(AlarmSeverities.Critical, "");
+        var evaluator = new AlarmEvaluator(AlarmSeverities.Critical, AlarmSeverities.Warning);
 
         var loop = new FleetServeLoop(bus, topics, health, evaluator, "fleet-manager", TimeSpan.FromSeconds(1), () => Start);
 
@@ -130,24 +130,25 @@ public sealed class FleetServeLoopTests
         var bus = new RecordingBus();
         var topics = new TopicScheme("shuttle");
         var health = new ShuttleHealth(TimeSpan.FromSeconds(30));
-        var evaluator = new AlarmEvaluator(AlarmSeverities.Critical, "");
+        var evaluator = new AlarmEvaluator(AlarmSeverities.Critical, AlarmSeverities.Warning);
 
-        var loop = new FleetServeLoop(bus, topics, health, evaluator, "fleet-manager", TimeSpan.FromSeconds(1), () => Start);
+        var now = Start;
+        var loop = new FleetServeLoop(bus, topics, health, evaluator, "fleet-manager", TimeSpan.FromSeconds(1), () => now);
 
         await loop.SubscribeAsync(CancellationToken.None);
         // Episode 1: seen at t=0, then silent past the window.
-        await bus.Handler!(new MessageReceived(topics.Status("SH-01"), StatusJson("SH-01", Start)), CancellationToken.None);
-  
-        await loop.EvaluateAndPublishAsync(Start.AddSeconds(31), CancellationToken.None);   // lost -> alarm #1 (latch set)
+        await bus.Handler!(new MessageReceived(topics.Status("SH-01"), StatusJson("SH-01", now)), CancellationToken.None);
+        now = now.AddSeconds(31);
+        await loop.EvaluateAndPublishAsync(now, CancellationToken.None);   // lost -> alarm #1 (latch set)
 
         // Recovery at t=32: heartbeat comes back, which clears the latch.
-        await bus.Handler!(new MessageReceived(topics.Status("SH-01"), StatusJson("SH-01", Start.AddSeconds(32))), CancellationToken.None);
-        await loop.EvaluateAndPublishAsync(Start.AddSeconds(32), CancellationToken.None);   // responsive -> clear, nothing published
+        now = now.AddSeconds(1);
+        await bus.Handler!(new MessageReceived(topics.Status("SH-01"), StatusJson("SH-01", now)), CancellationToken.None);
+        await loop.EvaluateAndPublishAsync(now, CancellationToken.None);   // responsive -> clear, nothing published
 
         // Episode 2: silence again until it is past the window once more.
-        await loop.EvaluateAndPublishAsync(Start.AddSeconds(63), CancellationToken.None);  // lost again -> alarm #2 (fresh)
-
-        Assert.Equal(2, bus.Published.Count);
+        now = now.AddSeconds(31);
+        await loop.EvaluateAndPublishAsync(now, CancellationToken.None);  // lost again -> alarm #2 (fresh)
 
         Assert.Equal(2, bus.Published.Count);
     }
@@ -158,7 +159,7 @@ public sealed class FleetServeLoopTests
         var bus = new RecordingBus();
         var topics = new TopicScheme("shuttle");
         var health = new ShuttleHealth(TimeSpan.FromSeconds(30));
-        var evaluator = new AlarmEvaluator(AlarmSeverities.Critical, "");
+        var evaluator = new AlarmEvaluator(AlarmSeverities.Critical, AlarmSeverities.Warning);
 
         var loop = new FleetServeLoop(bus, topics, health, evaluator, "fleet-manager", TimeSpan.FromSeconds(1), () => Start);
 
@@ -199,7 +200,7 @@ public sealed class FleetServeLoopTests
         var bus = new RecordingBus();
         var topics = new TopicScheme("shuttle");
         var health = new ShuttleHealth(TimeSpan.FromSeconds(30));
-        var evaluator = new AlarmEvaluator(AlarmSeverities.Critical, "");
+        var evaluator = new AlarmEvaluator(AlarmSeverities.Critical, AlarmSeverities.Warning);
 
         var loop = new FleetServeLoop(bus, topics, health, evaluator, "fleet-manager", TimeSpan.FromSeconds(1), () => Start);
 
@@ -219,7 +220,7 @@ public sealed class FleetServeLoopTests
         var bus = new RecordingBus();
         var topics = new TopicScheme("shuttle");
         var health = new ShuttleHealth(TimeSpan.FromSeconds(30));
-        var evaluator = new AlarmEvaluator(AlarmSeverities.Critical, "");
+        var evaluator = new AlarmEvaluator(AlarmSeverities.Critical, AlarmSeverities.Warning);
 
         // Captured clock that the test controls — NOT the real clock
         var injectedNow = Start;
@@ -247,7 +248,7 @@ public sealed class FleetServeLoopTests
         var bus = new RecordingBus();
         var topics = new TopicScheme("shuttle");
         var health = new ShuttleHealth(TimeSpan.FromSeconds(30));
-        var evaluator = new AlarmEvaluator("", AlarmSeverities.Warning);
+        var evaluator = new AlarmEvaluator(AlarmSeverities.Critical, AlarmSeverities.Warning);
 
         var loop = new FleetServeLoop(bus, topics, health, evaluator, "fleet-manager", TimeSpan.FromSeconds(1), () => Start);
 
@@ -277,7 +278,7 @@ public sealed class FleetServeLoopTests
         var bus = new RecordingBus();
         var topics = new TopicScheme("shuttle");
         var health = new ShuttleHealth(TimeSpan.FromSeconds(30));
-        var evaluator = new AlarmEvaluator("", AlarmSeverities.Warning);
+        var evaluator = new AlarmEvaluator(AlarmSeverities.Critical, AlarmSeverities.Warning);
 
         var loop = new FleetServeLoop(bus, topics, health, evaluator, "fleet-manager", TimeSpan.FromSeconds(1), () => Start);
 
@@ -295,7 +296,16 @@ public sealed class FleetServeLoopTests
 
         await loop.EvaluateAndPublishAsync(Start.AddSeconds(16), CancellationToken.None);
         
-        Assert.Empty(bus.Published);
+        var faultJson2 = JsonSerializer.Serialize(
+            new ShuttleStatusMessage(
+                new MessageEnvelope(ContractVersion.Current, MessageTypes.ShuttleStatus, Guid.NewGuid().ToString(), null, "SH-01", Start.AddSeconds(17)),
+                new ShuttleStatus("SH-01", "fault", "A01-L01", Start, FaultReasons.BlockedPath)));
+
+        await bus.Handler!(new MessageReceived(topics.Status("SH-01"), faultJson2), CancellationToken.None);
+
+        await loop.EvaluateAndPublishAsync(Start.AddSeconds(18), CancellationToken.None);
+        
+        Assert.Equal(2, bus.Published.Count);
     }
 
     [Fact]
@@ -304,7 +314,7 @@ public sealed class FleetServeLoopTests
         var bus = new RecordingBus();
         var topics = new TopicScheme("shuttle");
         var health = new ShuttleHealth(TimeSpan.FromSeconds(30));
-        var evaluator = new AlarmEvaluator("", AlarmSeverities.Warning);
+        var evaluator = new AlarmEvaluator(AlarmSeverities.Critical, AlarmSeverities.Warning);
 
         var loop = new FleetServeLoop(bus, topics, health, evaluator, "fleet-manager", TimeSpan.FromSeconds(1), () => Start);
 

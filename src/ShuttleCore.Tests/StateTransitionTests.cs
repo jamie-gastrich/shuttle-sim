@@ -147,7 +147,6 @@ public class StateTransitionTests
         var reason = "blocked path";
 
         shuttle.StartMove("A01-L02", Start);
-        shuttle.RaiseFault(reason, Start);
 
         Assert.Equal(ShuttleState.Fault, shuttle.State);
         Assert.Equal("A01-L01", shuttle.Position);
@@ -163,7 +162,6 @@ public class StateTransitionTests
         var reason = "blocked path";
 
         shuttle.StartMove("A02-L02", Start);
-        shuttle.RaiseFault(reason, Start);
 
         Assert.Equal(ShuttleState.Fault, shuttle.State);
         Assert.Equal("A01-L01", shuttle.Position);

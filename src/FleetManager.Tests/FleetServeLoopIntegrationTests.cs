@@ -36,7 +36,7 @@ public class FleetServeLoopIntegrationTests
         }, CancellationToken.None);
 
         var health = new ShuttleHealth(TimeSpan.FromSeconds(30));
-        var evaluator = new AlarmEvaluator(AlarmSeverities.Critical);
+        var evaluator = new AlarmEvaluator(AlarmSeverities.Critical, AlarmSeverities.Warning);
         var start = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         var loop = new FleetServeLoop(loopBus, topics, health, evaluator, "fleet-manager",
             TimeSpan.FromSeconds(1), () => start);
