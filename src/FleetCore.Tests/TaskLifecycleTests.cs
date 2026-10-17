@@ -213,4 +213,46 @@ public class TaskLifecycleTests
         
         Assert.Equal(task, board.Get("task-1"));
     }
+
+    [Fact]
+    public void Requeue_from_assigned_returns_the_task_to_queued()
+    {
+        var task = new FleetTask("task-1", "A01-L02", Start);
+        task.Assign("SH-01", Start);
+
+        task.Requeue(Start.AddSeconds(1));
+
+        Assert.Equal(TaskState.Queued, task.State);
+        Assert.Null(task.AssignedShuttleId);
+    }
+
+    [Fact]
+    public void Requeue_from_queued_is_rejected()
+    {
+        var task = new FleetTask("task-1", "A01-L02", Start);
+
+        Assert.Throws<TaskRejectedException>(() => task.Requeue(Start.AddSeconds(1)));
+    }
+
+    [Fact]
+    public void Requeue_from_in_progress_is_rejected()
+    {
+        var task = new FleetTask("task-1", "A01-L02", Start);
+        task.Assign("SH-01", Start);
+        task.Start(Start.AddSeconds(1));
+
+        Assert.Throws<TaskRejectedException>(() => task.Requeue(Start.AddSeconds(2)));
+    }
+
+    [Fact]
+    public void Requeue_from_a_done_task_is_rejected()
+    {
+        var task = new FleetTask("task-1", "A01-L02", Start);
+        task.Assign("SH-01", Start);
+        task.Start(Start.AddSeconds(1));
+        task.Complete(Start.AddSeconds(2));
+
+        Assert.Throws<TaskRejectedException>(() => task.Requeue(Start.AddSeconds(3)));
+    }
+        
 }

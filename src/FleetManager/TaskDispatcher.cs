@@ -38,4 +38,11 @@ public sealed class TaskDispatcher (TaskBoard board, IFleetTaskRepository reposi
         task.Fail(failureReason, now);
         await _repository.SaveAsync(task, cancellationToken);
     }
+
+    public async Task RequeueAsync(string taskId, DateTime now, CancellationToken cancellationToken)
+    {
+        var task = _board.Get(taskId);
+        task.Requeue(now);
+        await _repository.SaveAsync(task, cancellationToken);
+    }
 }

@@ -86,4 +86,14 @@ public sealed class FleetTask
 
     private static DateTime ToMicrosecondPrecision(DateTime value) =>
         new(value.Ticks - value.Ticks % 10, value.Kind);
+
+    public void Requeue(DateTime now)
+    {
+        EnsureInOrder(now);
+        if (State != TaskState.Assigned)
+            throw new TaskRejectedException("Cannot requeue a task that is not Assigned.");
+        AssignedShuttleId = null;
+        State = TaskState.Queued;
+        _lastEventAt = now;
+    }
 }

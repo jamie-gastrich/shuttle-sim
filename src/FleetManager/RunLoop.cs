@@ -101,8 +101,16 @@ public sealed class RunLoop
             }
 
             shuttle.StartMove(task.ToLane, _currentTime);
+            if (shuttle.State == ShuttleState.Fault)
+            {
+                // The move never began. Give the work back to the queue and free the
+                // route reservation that was made for a move that did not happen.
+                await _dispatcher.RequeueAsync(assigned.TaskId, _currentTime, cancellationToken);
+                _traffic.Release(shuttle.ShuttleId);
+                continue;
+            }
             _activeTasksByShuttle[shuttle.ShuttleId] = assigned;
-            // Persist InProgress; the active-task map is the in-flight set used by IsDone.
+            // Persist InProgress...
             await _dispatcher.StartAsync(assigned.TaskId, _currentTime, cancellationToken);
         }
 
