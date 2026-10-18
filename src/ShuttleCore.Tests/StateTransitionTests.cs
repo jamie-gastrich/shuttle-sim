@@ -167,4 +167,30 @@ public class StateTransitionTests
         Assert.Equal("A01-L01", shuttle.Position);
         Assert.Equal(reason, shuttle.FaultReason);
     }
+
+    [Fact]
+    public void Recover_from_fault_enters_idle_and_clears_fault_reason()
+    {
+        var rack = new Rack(aisleCount: 2, lanesPerAisle: 2, slotsPerLane: 2);
+        var shuttle = new Shuttle("SH-01", rack, "A01-L01", Timing);
+        var reason = "lost communication";
+
+        shuttle.RaiseFault(reason, Start);
+        shuttle.Recover(Start.AddSeconds(1));
+
+        Assert.Equal(ShuttleState.Idle, shuttle.State);
+        Assert.Null(shuttle.FaultReason);
+        Assert.Equal("A01-L01", shuttle.Position);
+    }
+
+    [Fact]
+    public void Recover_from_idle_is_rejected()
+    {
+        var rack = new Rack(aisleCount: 2, lanesPerAisle: 2, slotsPerLane: 2);
+        var shuttle = new Shuttle("SH-01", rack, "A01-L01", Timing);
+
+        var ex = Assert.Throws<ShuttleRejectedException>(() => shuttle.Recover(Start));
+
+        Assert.Equal("cannot recover while idle", ex.Message);
+    }
 }

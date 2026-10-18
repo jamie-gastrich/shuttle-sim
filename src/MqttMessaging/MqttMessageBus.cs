@@ -100,6 +100,7 @@ public sealed class MqttMessageBus : IMessageBus
 			MessageFamily.Ack => _options.Qos.Ack,
 			MessageFamily.Status => _options.Qos.Status,
 			MessageFamily.Alarm => _options.Qos.Alarm,
+			MessageFamily.Recovery => _options.Qos.Command,
 			_ => throw new ArgumentOutOfRangeException(nameof(family))
 		};
 

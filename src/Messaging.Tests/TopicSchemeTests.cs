@@ -30,4 +30,14 @@ public sealed class TopicSchemeTests
 		Assert.Equal("shuttle/SH-01/alarm", topics.Alarm("SH-01"));
 		Assert.Equal("shuttle/+/alarm", topics.AllAlarms);
 	}	
+
+	[Fact]
+	public void TopicScheme_recovery_topics_use_the_per_shuttle_branch()
+	{
+		var topics = new TopicScheme("shuttle");
+
+		Assert.Equal("shuttle/SH-01/recoveryCommand", topics.RecoveryCommand("SH-01"));
+		Assert.Equal("shuttle/SH-01/recoveryAck", topics.RecoveryAck("SH-01"));
+		Assert.Equal("shuttle/+/recoveryAck", topics.AllRecoveryAcks);
+	}
 }

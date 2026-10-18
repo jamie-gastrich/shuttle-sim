@@ -6,4 +6,5 @@ public enum MessageFamily
     Ack, 
     Status,
     Alarm,
+    Recovery,
 }

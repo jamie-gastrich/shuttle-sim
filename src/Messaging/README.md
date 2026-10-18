@@ -26,7 +26,7 @@ This is the seam between decision logic and the network. It defines *how* messag
   Messaging (this project)
       │  TopicScheme      — builds / parses {root}/{shuttleId}/{kind}
       │  MessageEnvelopes — fills MessageId, SenderId, SentAt
-      │  MessageFamily    — labels the traffic lane (Command / Ack / Status / Alarm)
+      │  MessageFamily    — labels the traffic lane (Command / Ack / Status / Alarm / Recovery)
       │  RetryPolicy      — pure backoff + attempt counting
       │  IdempotencyGuard — pure dedupe by MessageId
       ▼
@@ -46,9 +46,9 @@ enum member, a `TopicScheme` branch + wildcard, a `ToMqttQos` arm in
 | File | Where it fits |
 |---|---|
 | `IMessageBus.cs` | The single I/O seam: `ConnectAsync`, `PublishAsync`, `SubscribeAsync`, `DisposeAsync`. |
-| `TopicScheme.cs` | Builds the topics `{root}/{shuttleId}/{kind}` and the wildcards `AllAcks`/`AllStatuses`/`AllAlarms`. |
+| `TopicScheme.cs` | Builds the topics `{root}/{shuttleId}/{kind}` and the wildcards `AllAcks`/`AllStatuses`/`AllAlarms`/`AllRecoveryAcks`. |
 | `MessageEnvelopes.cs` | Fills a `MessageEnvelope` with a fresh id, sender, and timestamp; correlation is optional. |
-| `MessageFamily.cs` | The enum `Command/Ack/Status/Alarm` — the lane label that selects QoS. |
+| `MessageFamily.cs` | The enum `Command/Ack/Status/Alarm/Recovery` — the lane label that selects QoS. |
 | `MessageReceived.cs` | What a handler is handed: the `Topic` and the `Payload`. |
 | `RetryPolicy.cs` | The `RetryPolicy` record: `MaxAttempts`, `AckTimeout`, `Backoff`. Pure. |
 | `IdempotencyGuard.cs` | `IsDuplicate`/`MarkCompleted` dedupe by `MessageId`. Pure. |

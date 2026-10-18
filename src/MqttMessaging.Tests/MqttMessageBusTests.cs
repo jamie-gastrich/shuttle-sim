@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
+using MQTTnet.Protocol;
 using MQTTnet.Server;
 using Messaging;
 using MqttMessaging;
@@ -101,6 +102,55 @@ public sealed class MqttMessageBusTests
             await received.Task.WaitAsync(TimeSpan.FromSeconds(5));
             Assert.Equal(1, matches);
             await bus.DisposeAsync();
+        }
+        finally
+        {
+            await server.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Publish_with_Recovery_family_uses_correct_QoS()
+    {
+        var port = GetFreePort();
+        var serverOptions = new MqttServerOptionsBuilder()
+            .WithDefaultEndpoint()
+            .WithDefaultEndpointPort(port)
+            .WithDefaultEndpointBoundIPAddress(IPAddress.Loopback)
+            .Build();
+
+        var server = new MqttServerFactory().CreateMqttServer(serverOptions);
+        var captured = new List<MqttQualityOfServiceLevel>();
+        var publishObserved = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        server.InterceptingPublishAsync += e =>
+        {
+            captured.Add(e.ApplicationMessage.QualityOfServiceLevel);
+            publishObserved.TrySetResult();
+            return Task.CompletedTask;
+        };
+
+        await server.StartAsync();
+
+        try
+        {
+            await using var bus = new MqttMessageBus(new MqttMessageBusOptions(
+                "127.0.0.1",
+                serverOptions.DefaultEndpointOptions.Port,
+                "mqtt-recovery-qos-test",
+                new QosOptions(
+                    MqttQualityOfService.AtLeastOnce,
+                    MqttQualityOfService.ExactlyOnce,
+                    MqttQualityOfService.AtMostOnce,
+                    MqttQualityOfService.ExactlyOnce)));
+
+            await bus.ConnectAsync(CancellationToken.None);
+            await bus.PublishAsync("sample/recovery", "recover", MessageFamily.Recovery, CancellationToken.None);
+
+            await publishObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Single(captured);
+            Assert.Equal(MqttQualityOfServiceLevel.AtLeastOnce, captured[0]);
         }
         finally
         {

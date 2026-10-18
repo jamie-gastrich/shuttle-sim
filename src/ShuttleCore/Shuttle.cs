@@ -140,4 +140,14 @@ public sealed class Shuttle
 
     public TimeSpan TravelTimeTo(string lane) =>
         TimeSpan.FromTicks(_rack.DistanceInLanes(_position, lane) * _timing.MovePerLane.Ticks);
+
+    public void Recover(DateTime now)
+    {
+        EnsureInOrder(now);
+        if (_state != ShuttleState.Fault)
+            throw new ShuttleRejectedException($"cannot recover while {_state.ToWireName()}");
+        _state = ShuttleState.Idle;
+        _faultReason = null;
+        _lastEventAt = now;
+    }
 }
