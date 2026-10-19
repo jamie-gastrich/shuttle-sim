@@ -4,6 +4,7 @@ using Contracts;
 using Messaging;
 using MqttMessaging;
 using FleetManager;
+using ShuttleCore;
 
 if (args.Length == 0)
 {
@@ -244,13 +245,13 @@ async Task<int> RunRecoverAsync(string shuttleId)
 		var result = await sender.SendAsync(command, overall.Token);
 		switch (result.Status)
 		{
-			case RecoverySendStatus.Acknowledged:
+			case CommandSendStatus.Acknowledged:
 				await statusReceived.Task.WaitAsync(overall.Token);
 				return 0;
-			case RecoverySendStatus.Rejected:
+			case CommandSendStatus.Rejected:
 				Console.Error.WriteLine(result.Acknowledgement?.Reason ?? "Command rejected.");
 				return 1;
-			case RecoverySendStatus.NoAcknowledgement:
+			case CommandSendStatus.NoAcknowledgement:
 				Console.Error.WriteLine(
 					$"No acknowledgement for shuttle {shuttleId}, command {commandEnvelope.MessageId}, after {result.Attempts} attempts.");
 				return 1;
@@ -266,7 +267,7 @@ async Task<int> RunRecoverAsync(string shuttleId)
 	async Task HandleAckAsync(MessageReceived message, CancellationToken cancellationToken)
 	{
 		Console.WriteLine(message.Payload);
-		await sender.OnAckReceivedAsync(message, cancellationToken);
+		await sender.OnRecoveryAckReceivedAsync(message, cancellationToken);
 	}
 
 	Task HandleStatusAsync(MessageReceived message, CancellationToken _)
@@ -275,7 +276,7 @@ async Task<int> RunRecoverAsync(string shuttleId)
 		try
 		{
 			var status = JsonSerializer.Deserialize<ShuttleStatusMessage>(message.Payload);
-			if (status?.Status?.ShuttleId == shuttleId)
+			if (status?.Status?.ShuttleId == shuttleId && status?.Status.State == ShuttleState.Idle.ToWireName() )
 				statusReceived.TrySetResult();
 		}
 		catch (JsonException)

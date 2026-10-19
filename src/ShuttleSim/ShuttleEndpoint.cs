@@ -87,46 +87,52 @@ public sealed class ShuttleEndpoint
     }
 
     public async Task HandleRecoveryCommandAsync(string payload, DateTime now, CancellationToken cancellationToken)
+    {
+        MessageEnvelope? envelope;
+        try
         {
-            MessageEnvelope? envelope;
+            envelope = JsonSerializer.Deserialize<EnvelopeWrapper>(payload)?.Envelope;
+        }
+        catch (JsonException)
+        {
+            return;
+        }
+
+        if (envelope is null || string.IsNullOrWhiteSpace(envelope.MessageId) ||
+            envelope.ContractVersion != ContractVersion.Current ||
+            envelope.MessageType != MessageTypes.RecoveryCommand)
+            return;
+
+        RecoveryCommandMessage? command;
+        try
+        {
+            command = JsonSerializer.Deserialize<RecoveryCommandMessage>(payload);
+        }
+        catch (JsonException)
+        {
+            return;
+        }
+
+        if (command is null || command.Envelope is null ||
+            command.Envelope.MessageId != envelope.MessageId ||
+            command.ShuttleId != _shuttleId)
+            return;
+
+        if (_shuttle.State == ShuttleState.Fault)
+        {
             try
             {
-                envelope = JsonSerializer.Deserialize<EnvelopeWrapper>(payload)?.Envelope;
+                _shuttle.Recover(now);
             }
-            catch (JsonException)
+            catch (ShuttleRejectedException exception)
             {
+                await RecoveryAcknowledgeAsync(command, accepted: false, exception.Message, now, cancellationToken);
                 return;
             }
-
-            if (envelope is null || string.IsNullOrWhiteSpace(envelope.MessageId) ||
-                envelope.ContractVersion != ContractVersion.Current ||
-                envelope.MessageType != MessageTypes.MoveCommand)
-                return;
-
-            RecoveryCommandMessage? command;
-            try
-            {
-                command = JsonSerializer.Deserialize<RecoveryCommandMessage>(payload);
-            }
-            catch (JsonException)
-            {
-                return;
-            }
-
-            if (command is null || command.Envelope is null ||
-                command.Envelope.MessageId != envelope.MessageId ||
-                command.ShuttleId != _shuttleId)
-                return;
-
-            if (_shuttle.State == ShuttleState.Fault)
-            {
-                await RecoveryAcknowledgeAsync(command, accepted: false, reason: _shuttle.FaultReason, now, cancellationToken);
-                return;
-            }
-
             await RecoveryAcknowledgeAsync(command, accepted: true, reason: null, now, cancellationToken);
             await PublishStatusAsync(now, cancellationToken);
         }
+    }
 
     public Task PublishStatusAsync(DateTime sentAt, CancellationToken cancellationToken) =>
     PublishStatusAsync(_shuttle.State.ToWireName(), sentAt, cancellationToken);

@@ -5,12 +5,10 @@ using Messaging;
 
 namespace FleetManager;
 
-public enum RecoverySendStatus { Acknowledged, Rejected, NoAcknowledgement }
-
 public sealed record RecoverySendResult(
-    RecoverySendStatus Status, int Attempts, RecoveryAckMessage? Acknowledgement);
+    CommandSendStatus Status, int Attempts, RecoveryAckMessage? Acknowledgement);
 
-public class RecoverySender
+public sealed class RecoverySender
 {
     private readonly IMessageBus _bus;
     private readonly TopicScheme _topics;
@@ -24,7 +22,7 @@ public class RecoverySender
         _policy = policy;
     }
 
-    public Task OnAckReceivedAsync(MessageReceived message, CancellationToken cancellationToken)
+    public Task OnRecoveryAckReceivedAsync(MessageReceived message, CancellationToken cancellationToken)
     {
         try
         {
@@ -69,8 +67,8 @@ public class RecoverySender
                 {
                     var ack = await waiter.Task.WaitAsync(_policy.AckTimeout, cancellationToken);
                     return ack.Accepted
-                        ? new RecoverySendResult(RecoverySendStatus.Acknowledged, attempt, ack)
-                        : new RecoverySendResult(RecoverySendStatus.Rejected, attempt, ack);
+                        ? new RecoverySendResult(CommandSendStatus.Acknowledged, attempt, ack)
+                        : new RecoverySendResult(CommandSendStatus.Rejected, attempt, ack);
                 }
                 catch (TimeoutException)
                 {
@@ -78,7 +76,7 @@ public class RecoverySender
                         await Task.Delay(_policy.Backoff, cancellationToken);
                 }
             }
-            return new RecoverySendResult(RecoverySendStatus.NoAcknowledgement, _policy.MaxAttempts, null);
+            return new RecoverySendResult(CommandSendStatus.NoAcknowledgement, _policy.MaxAttempts, null);
         }
         finally
         {

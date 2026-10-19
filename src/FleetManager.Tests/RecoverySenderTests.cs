@@ -28,7 +28,7 @@ public sealed class RecoverySenderTests
         var bus = new FakeBus();
         var retry = new RetryPolicyExtensions.RetryPolicy(3, TimeSpan.FromMilliseconds(20), TimeSpan.Zero);
         var sender = new RecoverySender(bus, new TopicScheme("root"), retry);
-        await bus.SubscribeAsync("root/+/ack", MessageFamily.Ack, sender.OnAckReceivedAsync, CancellationToken.None);
+        await bus.SubscribeAsync("root/+/recoveryAck", MessageFamily.Ack, sender.OnRecoveryAckReceivedAsync, CancellationToken.None);
 
         var commandEnvelope = MessageEnvelopes.Create(MessageTypes.RecoveryCommand, "fleet-manager-id", Start);
         var command = new RecoveryCommandMessage(commandEnvelope, "shuttle-1");
@@ -39,11 +39,11 @@ public sealed class RecoverySenderTests
         var result = await sender.SendAsync(command, CancellationToken.None);
 
         var publishedCommands = bus.Published
-            .Where(item => item.Family == MessageFamily.Command)
+            .Where(item => item.Family == MessageFamily.Recovery && item.Topic == new TopicScheme("root").RecoveryCommand("shuttle-1"))
             .Select(item => JsonSerializer.Deserialize<RecoveryCommandMessage>(item.Payload))
             .ToList();
 
-        Assert.Equal(RecoverySendStatus.Acknowledged, result.Status);
+        Assert.Equal(CommandSendStatus.Acknowledged, result.Status);
         Assert.Equal(2, result.Attempts);
         Assert.NotNull(result.Acknowledgement);
         Assert.Equal(2, bus.Published.Count);
@@ -57,7 +57,7 @@ public sealed class RecoverySenderTests
         var bus = new FakeBus();
         var retry = new RetryPolicyExtensions.RetryPolicy(3, TimeSpan.FromMilliseconds(20), TimeSpan.Zero);
         var sender = new RecoverySender(bus, new TopicScheme("root"), retry);
-        await bus.SubscribeAsync("root/+/ack", MessageFamily.Ack, sender.OnAckReceivedAsync, CancellationToken.None);
+        await bus.SubscribeAsync("root/+/recoveryAck", MessageFamily.Ack, sender.OnRecoveryAckReceivedAsync, CancellationToken.None);
 
         var commandEnvelope = MessageEnvelopes.Create(MessageTypes.RecoveryCommand, "fleet-manager-id", Start);
         var command = new RecoveryCommandMessage(commandEnvelope, "shuttle-1");
@@ -68,7 +68,7 @@ public sealed class RecoverySenderTests
 
         var result = await sender.SendAsync(command, CancellationToken.None);
 
-        Assert.Equal(RecoverySendStatus.NoAcknowledgement, result.Status);
+        Assert.Equal(CommandSendStatus.NoAcknowledgement, result.Status);
         Assert.Equal(retry.MaxAttempts, result.Attempts);
         Assert.Null(result.Acknowledgement);
         Assert.Equal(retry.MaxAttempts, bus.Published.Count);
@@ -80,7 +80,7 @@ public sealed class RecoverySenderTests
         var bus = new FakeBus();
         var retry = new RetryPolicyExtensions.RetryPolicy(3, TimeSpan.FromMilliseconds(20), TimeSpan.Zero);
         var sender = new RecoverySender(bus, new TopicScheme("root"), retry);
-        await bus.SubscribeAsync("root/+/ack", MessageFamily.Ack, sender.OnAckReceivedAsync, CancellationToken.None);
+        await bus.SubscribeAsync("root/+/recoveryAck", MessageFamily.Ack, sender.OnRecoveryAckReceivedAsync, CancellationToken.None);
 
         var commandEnvelope = MessageEnvelopes.Create(MessageTypes.RecoveryCommand, "fleet-manager-id", Start);
         var command = new RecoveryCommandMessage(commandEnvelope, "shuttle-1");
@@ -89,7 +89,7 @@ public sealed class RecoverySenderTests
 
         var result = await sender.SendAsync(command, CancellationToken.None);
 
-        Assert.Equal(RecoverySendStatus.Rejected, result.Status);
+        Assert.Equal(CommandSendStatus.Rejected, result.Status);
         Assert.Equal(1, result.Attempts);
         Assert.NotNull(result.Acknowledgement);
         Assert.False(result.Acknowledgement!.Accepted);
@@ -102,7 +102,7 @@ public sealed class RecoverySenderTests
         var bus = new FakeBus();
         var retry = new RetryPolicyExtensions.RetryPolicy(3, TimeSpan.FromMilliseconds(20), TimeSpan.Zero);
         var sender = new RecoverySender(bus, new TopicScheme("root"), retry);
-        await bus.SubscribeAsync("root/+/ack", MessageFamily.Ack, sender.OnAckReceivedAsync, CancellationToken.None);
+        await bus.SubscribeAsync("root/+/recoveryAck", MessageFamily.Ack, sender.OnRecoveryAckReceivedAsync, CancellationToken.None);
 
         var commandEnvelope = MessageEnvelopes.Create(MessageTypes.RecoveryCommand, "fleet-manager-id", Start);
         var command = new RecoveryCommandMessage(commandEnvelope, "shuttle-1");
@@ -111,7 +111,7 @@ public sealed class RecoverySenderTests
 
         var result = await sender.SendAsync(command, CancellationToken.None);
 
-        Assert.Equal(RecoverySendStatus.Acknowledged, result.Status);
+        Assert.Equal(CommandSendStatus.Acknowledged, result.Status);
         Assert.Equal(1, result.Attempts);
         Assert.NotNull(result.Acknowledgement);
         Assert.True(result.Acknowledgement!.Accepted);
