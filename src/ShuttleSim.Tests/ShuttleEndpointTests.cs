@@ -140,6 +140,75 @@ public sealed class ShuttleEndpointTests
         Assert.NotEqual("idle", statusMessage.Status.State);
     }
 
+    [Fact]
+    public async Task Recovery_command_on_a_faulted_shuttle_recovers_and_reports_idle()
+    {
+        var bus = new FakeBus();
+        var rack = new Rack(aisleCount: 2, lanesPerAisle: 2, slotsPerLane: 2);
+        rack.MarkBlocked("A02-L02");
+        var shuttle = new Shuttle("SH-01", rack, "A01-L01",
+            new ShuttleTiming(TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2)));
+        var endpoint = CreateEndpoint(shuttle, bus);
+
+        shuttle.StartMove("A02-L02", Start);                 // raises the fault; publishes nothing
+        Assert.Equal(ShuttleState.Fault, shuttle.State);
+
+        await endpoint.HandleRecoveryCommandAsync(
+            RecoveryPayload("SH-01", "recovery-1"), Start, CancellationToken.None);
+
+        var ackEntry = Assert.Single(bus.Published, m => m.Family == MessageFamily.Ack);
+        Assert.Equal("shuttle/SH-01/recoveryAck", ackEntry.Topic);
+        Assert.Contains("\"recoveryAck\"", ackEntry.Payload);          // literal, not constant-vs-itself
+        Assert.Equal("recoveryAck", MessageTypes.RecoveryAck);
+
+        var ack = JsonSerializer.Deserialize<RecoveryAckMessage>(ackEntry.Payload)!;
+        Assert.True(ack.Accepted);
+        Assert.Null(ack.Reason);
+        Assert.Equal("recovery-1", ack.Envelope.CorrelationId);
+        Assert.Equal("SH-01", ack.Envelope.SenderId);
+
+        Assert.Equal(ShuttleState.Idle, shuttle.State);
+        var status = Assert.Single(bus.Published, m => m.Family == MessageFamily.Status);
+        var statusMessage = JsonSerializer.Deserialize<ShuttleStatusMessage>(status.Payload)!;
+        Assert.Equal("idle", statusMessage.Status.State);
+        Assert.Null(statusMessage.Status.FaultReason);
+    }
+
+    [Fact]
+    public async Task Recovery_command_for_a_healthy_shuttle_is_accepted_and_changes_nothing()
+    {
+        var bus = new FakeBus();
+        var shuttle = CreateShuttle();
+        var endpoint = CreateEndpoint(shuttle, bus);
+
+        await endpoint.HandleRecoveryCommandAsync(
+            RecoveryPayload("SH-01", "recovery-healthy"), Start, CancellationToken.None);
+
+        var ackEntry = Assert.Single(bus.Published);                   // one ack, and no status
+        Assert.Equal(MessageFamily.Ack, ackEntry.Family);
+        var ack = JsonSerializer.Deserialize<RecoveryAckMessage>(ackEntry.Payload)!;
+        Assert.True(ack.Accepted);
+        Assert.Null(ack.Reason);
+        Assert.Equal("recovery-healthy", ack.Envelope.CorrelationId);
+        Assert.Equal(ShuttleState.Idle, shuttle.State);
+        Assert.Equal("A01-L01", shuttle.Position);
+        Assert.DoesNotContain(bus.Published, m => m.Family == MessageFamily.Status);
+
+    }
+
+    [Fact]
+    public async Task Recovery_command_for_another_shuttle_is_ignored()
+    {
+        var bus = new FakeBus();
+        var endpoint = CreateEndpoint(CreateShuttle(), bus);
+
+        await endpoint.HandleRecoveryCommandAsync(
+            RecoveryPayload("SH-02", "recovery-other"), Start, CancellationToken.None);
+
+        Assert.Empty(bus.Published);
+
+    }
+
     private static Shuttle CreateShuttle()
     {
         var rack = new Rack(aisleCount: 2, lanesPerAisle: 2, slotsPerLane: 2);
@@ -160,5 +229,17 @@ public sealed class ShuttleEndpointTests
             "fleet-manager",
             Start);
         return JsonSerializer.Serialize(new MoveCommandMessage(envelope, shuttleId, toLane));
+    }
+
+    private static string RecoveryPayload(string shuttleId, string messageId)
+    {
+        var envelope = new MessageEnvelope(
+            ContractVersion.Current,
+            MessageTypes.RecoveryCommand,
+            messageId,
+            null,
+            "fleet-manager",
+            Start);
+        return JsonSerializer.Serialize(new RecoveryCommandMessage(envelope, shuttleId));
     }
 }

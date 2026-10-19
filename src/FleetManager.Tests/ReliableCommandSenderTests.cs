@@ -39,6 +39,14 @@ internal sealed class FakeBus : IMessageBus
                 ? Task.CompletedTask
                 : _handler(new MessageReceived("root/shuttle-1/ack", JsonSerializer.Serialize(ack)), CancellationToken.None));
     }
+    
+    public void RecoveryQueueAck(RecoveryAckMessage ack)
+    {
+        _plannedResponses.Enqueue(() =>
+            _handler is null
+                ? Task.CompletedTask
+                : _handler(new MessageReceived("root/shuttle-1/ack", JsonSerializer.Serialize(ack)), CancellationToken.None));
+    }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

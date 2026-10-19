@@ -86,6 +86,48 @@ public sealed class ShuttleEndpoint
         await PublishStatusAsync("idle", arrival, cancellationToken);
     }
 
+    public async Task HandleRecoveryCommandAsync(string payload, DateTime now, CancellationToken cancellationToken)
+        {
+            MessageEnvelope? envelope;
+            try
+            {
+                envelope = JsonSerializer.Deserialize<EnvelopeWrapper>(payload)?.Envelope;
+            }
+            catch (JsonException)
+            {
+                return;
+            }
+
+            if (envelope is null || string.IsNullOrWhiteSpace(envelope.MessageId) ||
+                envelope.ContractVersion != ContractVersion.Current ||
+                envelope.MessageType != MessageTypes.MoveCommand)
+                return;
+
+            RecoveryCommandMessage? command;
+            try
+            {
+                command = JsonSerializer.Deserialize<RecoveryCommandMessage>(payload);
+            }
+            catch (JsonException)
+            {
+                return;
+            }
+
+            if (command is null || command.Envelope is null ||
+                command.Envelope.MessageId != envelope.MessageId ||
+                command.ShuttleId != _shuttleId)
+                return;
+
+            if (_shuttle.State == ShuttleState.Fault)
+            {
+                await RecoveryAcknowledgeAsync(command, accepted: false, reason: _shuttle.FaultReason, now, cancellationToken);
+                return;
+            }
+
+            await RecoveryAcknowledgeAsync(command, accepted: true, reason: null, now, cancellationToken);
+            await PublishStatusAsync(now, cancellationToken);
+        }
+
     public Task PublishStatusAsync(DateTime sentAt, CancellationToken cancellationToken) =>
     PublishStatusAsync(_shuttle.State.ToWireName(), sentAt, cancellationToken);
 
@@ -96,6 +138,16 @@ public sealed class ShuttleEndpoint
             MessageTypes.CommandAck, _shuttleId, sentAt, command.Envelope.MessageId);
         var acknowledgement = new CommandAckMessage(envelope, accepted, reason);
         return _bus.PublishAsync(_topics.Ack(_shuttleId), JsonSerializer.Serialize(acknowledgement),
+            MessageFamily.Ack, cancellationToken);
+    }
+
+    private Task RecoveryAcknowledgeAsync(RecoveryCommandMessage command, bool accepted, string? reason,
+        DateTime sentAt, CancellationToken cancellationToken)
+    {
+        var envelope = MessageEnvelopes.Create(
+            MessageTypes.RecoveryAck, _shuttleId, sentAt, command.Envelope.MessageId);
+        var acknowledgement = new RecoveryAckMessage(envelope, accepted, reason);
+        return _bus.PublishAsync(_topics.RecoveryAck(_shuttleId), JsonSerializer.Serialize(acknowledgement),
             MessageFamily.Ack, cancellationToken);
     }
 

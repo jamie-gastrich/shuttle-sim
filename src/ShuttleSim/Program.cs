@@ -99,6 +99,13 @@ async Task<int> RunServerAsync()
             return connectedEndpoint.HandleCommandAsync(message.Payload, DateTime.UtcNow, ct);
         },
         CancellationToken.None);
+    await bus.SubscribeAsync(topics.RecoveryCommand(shuttleId), MessageFamily.Recovery,
+        (message, ct) =>
+        {
+            Console.WriteLine($"handled {message.Topic} {MessageIdOf(message.Payload)}");
+            return connectedEndpoint.HandleRecoveryCommandAsync(message.Payload, DateTime.UtcNow, ct);
+        },
+        CancellationToken.None);
     
     var heartbeatIntervalMs = configuration.GetValue<int>("Shuttle:HeartbeatIntervalMs");
 
