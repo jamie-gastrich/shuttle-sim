@@ -129,9 +129,10 @@ public sealed class ShuttleEndpoint
                 await RecoveryAcknowledgeAsync(command, accepted: false, exception.Message, now, cancellationToken);
                 return;
             }
-            await RecoveryAcknowledgeAsync(command, accepted: true, reason: null, now, cancellationToken);
             await PublishStatusAsync(now, cancellationToken);
         }
+        
+        await RecoveryAcknowledgeAsync(command, accepted: true, reason: null, now, cancellationToken);
     }
 
     public Task PublishStatusAsync(DateTime sentAt, CancellationToken cancellationToken) =>
