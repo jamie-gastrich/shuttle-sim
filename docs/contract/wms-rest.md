@@ -63,15 +63,16 @@ application/problem+json
 
 ## Routes and status codes
 
-| Situation                                       | Status                                            | Body                                          |
-| ----------------------------------------------- | ------------------------------------------------- | --------------------------------------------- |
-| Order stored, first time                        | `201 Created` + `Location: /api/orders/{orderId}` | the order                                     |
-| Same `orderId`, all four field values identical | `200 OK`                                          | the stored order (original `receivedAt`)      |
-| Same `orderId`, any field value different       | `409 Conflict`                                    | problem+json, title `Order id already used`   |
-| Validation errors                               | `400 Bad Request`                                 | problem+json from `Results.ValidationProblem` |
-| `GET` unknown id                                | `404 Not Found`                                   | problem+json, title `Unknown order`           |
-| Wrong content type                              | `415`                                             | framework-generated                           |
-| Malformed JSON                                  | `400`                                             | framework-generated                           |
+| Route                                            | Situation                                               | Status                                            | Body                                          |
+| ------------------------------------------------ | ------------------------------------------------------- | ------------------------------------------------- | --------------------------------------------- |
+| `POST /api/orders`                               | Order stored, first time                                | `201 Created` + `Location: /api/orders/{orderId}` | the order                                     |
+| `POST /api/orders`                               | Same `orderId`, all four field values identical (retry) | `200 OK`                                          | the stored order (original `receivedAt`)      |
+| `POST /api/orders`                               | Same `orderId`, any field value different               | `409 Conflict`                                    | problem+json, title `Order id already used`   |
+| `POST /api/orders`                               | Validation errors                                       | `400 Bad Request`                                 | problem+json from `Results.ValidationProblem` |
+| `GET /api/orders/{orderId}`                      | Known id                                                | `200 OK`                                          | the order                                     |
+| `GET /api/orders/{orderId}`                      | Unknown id                                              | `404 Not Found`                                   | problem+json, title `Unknown order`           |
+| `POST /api/orders` (a request that binds a body) | Wrong content type                                      | `415`                                             | framework-generated                           |
+| `POST /api/orders` (a request that binds a body) | Malformed JSON                                          | `400`                                             | framework-generated                           |
 
 ---
 

@@ -247,3 +247,32 @@ Not yet verified: the composition — Kestrel and the MQTT serve loop running to
 - The WMS status-push slice has a fixed order body to send and a fixed `state` vocabulary to send in it.
 - M7's dashboard is another client of the same routes and the same bodies.
 - The WMS has a document to write against, `docs/contract/wms-rest.md` version 1, that never moves the shuttle wire.
+
+---
+
+## 11. Erratum: the §3 route/status table
+
+**Date:** 2026-10-19. **Appended, not a rewrite.** No line above this one changed. This corrects the `### Status codes` table inside [§3 Decision B](#3-decision-b-routes-shapes-status-codes-and-the-duplicate-rule), which review 20 flagged as incomplete.
+
+**Why an erratum and not a new record.** AGENTS.md says a decision entry is never rewritten, and that a *replaced* decision gets a new entry. Nothing in the design was replaced here: the routes, the bodies, the status codes, and the duplicate rule all stand exactly as decided above. Only the §3 table was an incomplete rendering of that decision — it listed situations but never named the route each situation belongs to, and it had no row for a successful `GET`. A new numbered record would be a decision number spent on a documentation defect, and a reader of §3 might never cross-read it. Recording the correction in the same file keeps it next to the table it fixes. The choice is recorded here so the next agent does not have to guess.
+
+**What was missing, stated plainly.** §3's `### Routes` subsection already names both routes (`POST /api/orders`, `GET /api/orders/{orderId}`), but its `### Status codes` table names neither route and has no row for `GET /api/orders/{orderId}` on a **known** id returning `200` with the order body. The table showed a `200` row, but that row is the **identical re-submit of a `POST`**, not a successful `GET`. So the table was both un-routed and short one outcome. This erratum adds the route to every row and adds the missing `GET` `200` row.
+
+**Corrected, complete route/status table** (the design; unchanged in substance from §3 — only the `Route` column and the `GET` known-id row are new):
+
+| Route | Situation | Status | Body |
+|---|---|---|---|
+| `POST /api/orders` | Order stored, first time | `201 Created` + `Location: /api/orders/{orderId}` | the order |
+| `POST /api/orders` | Same `orderId`, all four field values identical (retry) | `200 OK` | the stored order (original `receivedAt`) |
+| `POST /api/orders` | Same `orderId`, any field value different | `409 Conflict` | problem+json, title `Order id already used` |
+| `POST /api/orders` | Validation errors | `400 Bad Request` | problem+json from `Results.ValidationProblem` |
+| `GET /api/orders/{orderId}` | Known id | `200 OK` | the order |
+| `GET /api/orders/{orderId}` | Unknown id | `404 Not Found` | problem+json, title `Unknown order` |
+| `POST /api/orders` (a request that binds a body) | Wrong content type | `415` | framework-generated |
+| `POST /api/orders` (a request that binds a body) | Malformed JSON | `400` | framework-generated |
+
+**Two rows are POST-only, and that is measured, not assumed.** The `415` and malformed-JSON `400` come from framework body handling; a `GET` carries no bound body, so neither fires on it. Measured in a scratch web toy (`/tmp/opencode`, deleted): `POST` with a JSON content type → `201`; `POST` with malformed JSON → `400`; `POST` with `Content-Type: text/plain` → `415`; `GET` with a wrong `Content-Type` header → `200`; `GET` with a malformed JSON body and a JSON content type → `200`. The old §3 table named neither the route nor this POST-only fact.
+
+**No decision changed, and no version moved.** The duplicate rule (identical → `200`, changed → `409`) is untouched. `ContractVersion.Current` stays `4`; `docs/contract/v1.md`…`v4.md` are untouched. This is a documentation correction to one table, not a wire change, so nothing gets a version bump.
+
+**One related omission remains, and it is the owner's to fix.** The same incomplete table appears in `docs/contract/wms-rest.md` (`## Routes and status codes`), which review 20 issue 2 asks the owner to complete as part of the M6 deliverable. That page is the owner's assignment output and is deliberately **not** edited by this record. Lesson 20's own route table (`POST /api/orders` → `201`; `GET /api/orders/{orderId}` → `200`/`404`; identical re-send → `200`) is already complete and needs no correction.

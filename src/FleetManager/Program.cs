@@ -211,11 +211,18 @@ async Task<int> RunServeAsync()
 	try
 	{
 		await loopTask;
-		await webTask;
 	}
 	catch (OperationCanceledException) when (stopping.IsCancellationRequested)
 	{
 		// Expected: the loop stopped because we cancelled it.
+	}
+	try
+	{
+		await webTask;
+	}
+	catch (OperationCanceledException) when (stopping.IsCancellationRequested)
+	{
+		// Expected: the webTask stopped because we cancelled it.
 	}
 	return 0;
 }
