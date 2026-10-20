@@ -15,8 +15,8 @@ Only the reviewer changes this table, and only after a passing review.
 | M2 | Message contract and transport | done |
 | M3 | Fleet manager core | done |
 | M4 | Traffic control | done |
-| M5 | Faults and recovery | done | Verified: `dotnet test ShuttleFleet.slnx -v m --filter "Category!=Integration"` (159/159 passed) |
-| M6 | WMS integration | in progress | Reviewed: `docs/reviews/20-wms-rest-front-door.md` (pass with changes); [record 28](docs/decisions/28-wms-rest-front-door.md); lesson 20. Deferred considers (d/e/f/g) to a later door-hardening slice; other open items in the review. |
+| M5 | Faults and recovery | done |
+| M6 | WMS integration | in progress |
 | M7 | Operator dashboard and diagnostics | not started |
 | M8 | Stretch | not started |
 

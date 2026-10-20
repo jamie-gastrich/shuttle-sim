@@ -198,3 +198,101 @@ This slice is the bridge M6 exists for: the WMS can now cause fleet work. REST a
 ## README
 
 **Not updated.** The verdict is *pass with changes*: no blockers, but three test-strength should-fixes remain (plus two considers), so per AGENTS.md the M6 row stays `in progress`. The current M6 row also references review 20's outcomes; it is left exactly as it is, and nothing in `README.md` changed — verified with `git status --short` (clean) after writing this file. M6 is **not** marked done: order → queued task is one input half of M6; order status back to the WMS, cancellation, slow/dead-WMS behaviour, and the door-hardening slice are still owed.
+
+---
+
+# Re-review 1 — 2026-10-20
+
+**Commit under review:** `159cda7` ("M6: review and corrections"), which addressed the three should-fixes above. The commit touches exactly two files: `src/FleetCore.Tests/WmsOrderBoardTests.cs` (+9/−3) and this review file.
+**Verdict:** **pass.** All three should-fixes are genuinely fixed, the pure suite is green, and the two mutations that mattered — (g), which previously survived, and (e), re-checked as a spot check — are both now killed by committed tests. The acceptance-greps stand at **18/19**, the remaining failure being the known `CreatedTask` grep artifact (behaviour correct, verified by mutation (c) in the original review). Per AGENTS.md this closes review 21's *pass with changes*; M6 itself stays **in progress** (status push, cancel, WMS-outage behaviour, and the door-hardening slice are still owed).
+
+## Commands run (exact) and what they showed
+
+| # | Command | Result |
+|---|---|---|
+| 1 | `git log --oneline -5 && git status --short && dotnet --version` | HEAD `159cda7`; tree **clean**; SDK `10.0.112` |
+| 2 | `git show --stat 159cda7` and `git show 159cda7 -- src/FleetCore.Tests/WmsOrderBoardTests.cs` | two files: the test file (+9/−3) and this review; the diff is exactly the three should-fixes, nothing else |
+| 3 | `cd src && dotnet build` | RC 0 — **0 Warning(s), 0 Error(s)** |
+| 4 | `cd src && dotnet test ShuttleFleet.slnx -v m --filter "Category!=Integration"` | **RC 0 — Failed: 0, Passed: 163, Skipped: 0, Total: 163.** Per project: FleetCore 39, FleetManager 56, ShuttleCore 31, Contracts 8, TrafficCore 6, Messaging 10, MqttMessaging 3, ShuttleSim 10. (Correction: the original review's headline said 165; its own per-project figures also sum to 163 — the correct total is **163**.) |
+| 5 | Lesson 21 acceptance greps (19 checks; script run from repo root, each check `grep -q`/`git diff`-based) | **18/19 PASS** — see the table below. Check 4 fails, unchanged, and is still the grep artifact. (An initial run reported check 19 failing; that was the reviewer's own harness expecting 7 `[Fact]`s — the file has 8, including review 20's `Unknown_order_is_not_found`. Recounted by hand: check 19 passes.) |
+| 6 | `grep -rnE "Results\|HttpContext\|IResult" src/FleetCore --include=*.cs` (check 13, re-run) | **no matches** — pure split intact |
+| 7 | `grep -n "Validate\|board.Submit" src/FleetManager/Program.cs` (check 15) | `Validate` at `:185`, `board.Submit` at `:189` — validation still precedes the board call |
+| 8 | `grep -rn "ToWireName" src/FleetCore/TaskState.cs` | `ToWireName` is the extension method in `public static class TaskStateWire` (`TaskState.cs:12-14`) — the test's `.State.ToWireName()` pins through the same mapper the lesson asked for |
+| 9 | Mutations (g) and (e), each applied to a scratch copy of `src` in `/tmp/opencode/l21rereview` (workspace untouched; scratch **deleted** afterwards) | see "Mutation evidence" below |
+| 10 | `docker compose -f docker/compose.yml ps` then `down`; `pgrep -af "dotnet run\|FleetManager.dll\|mosquitto"` | broker and database containers were found running (not started by this review — likely left from the owner's session); brought down with `docker compose down`; afterwards **no containers and no stray processes** |
+| 11 | `git status --short` after all work | **clean** — nothing under `src/` or `docs/` was modified by this review before the README table edit below |
+
+## The three should-fixes, confirmed
+
+| # | Should-fix (from above) | Status | Evidence |
+|---|---|---|---|
+| 1 | Wire-name literal pin via `ToWireName()`, not an enum-vs-enum comparison and not `ToString()` | **FIXED** | `WmsOrderBoardTests.cs:73` — `Assert.Equal("queued", result.CreatedTask.State.ToWireName());`. This pins the exact string the status-push slice will later send, through `TaskStateWire` (`TaskState.cs:12-16`). Note the owner's mid-fix failure (`ToString()` returning `"Queued"`) was the correct lesson in itself: the enum member name and the wire word are different vocabularies, and only the wire word is the contract. |
+| 2 | `A_second_order_adds_a_second_task` asserts the second task's shape, not just the count | **FIXED** | `WmsOrderBoardTests.cs:116-117` — `Assert.Equal("ORD-2", second.CreatedTask.TaskId);` and `Assert.Equal("A02-L02", second.CreatedTask.ToLane);`, in addition to the count at `:115`. A mapping that reused `ORD-1`'s id or lane for the second order is now caught — in a real fleet that mutation is a pallet routed to the wrong lane or two orders colliding on one task id. |
+| 3 | `TaskId == order id` and `CreatedAt == order.ReceivedAt` are both asserted | **FIXED** | `WmsOrderBoardTests.cs:71` — `Assert.Equal(result.Order.OrderId, result.CreatedTask.TaskId);` (generic equality, which is the *rule*; the literal `"ORD-1"` pin stays on the order at `:21`, and the second-order test supplies the non-`ORD-1` evidence the original issue asked for); `:75` — `Assert.Equal(Start, result.CreatedTask.CreatedAt);`. The `CreatedAt` assertion is what kills mutation (g), which survived the original review. It passes exactly because `Start` sits on a whole second (ticks divisible by 10), so `FleetTask`'s microsecond truncation is a no-op — the detail record 29 §3 flagged. |
+
+## Mutation evidence (scratch `/tmp/opencode/l21rereview`, deleted afterwards)
+
+Each mutation was applied to a throwaway copy of `src`; `FleetCore.Tests` ran after each. The workspace was never touched. The first attempt at (g) silently failed to apply (an editor no-op on the scratch path) and was re-applied with the file content verified before the test run — the green result below is after a verified mutation, not an unmutated build.
+
+| # | Mutation | Result | Verdict | Catching test |
+|---|---|---|---|---|
+| g | `CreateTask` uses `DateTime.UtcNow` instead of `order.ReceivedAt` | FleetCore **1 failed** (38/39) | **KILLED** (previously SURVIVED) | `First_submit_creates_exactly_one_queued_task` — `Assert.Equal() Failure: Values differ; Expected: 2026-01-01T00:00:00.0000000Z, Actual: 2026-10-20T…`, at `WmsOrderBoardTests.cs:75` |
+| e | `created.Assign("SH-01", now)` immediately after creation (spot check) | FleetCore **1 failed** (38/39) | **KILLED** (unchanged) | `First_submit_creates_exactly_one_queued_task` — the `"queued"` `ToWireName()` assertion at `:73` fails with `Assert.Equal() Failure: Strings differ`, i.e. the new literal pin is the catcher, exactly as the original review predicted |
+
+**Reading.** (g) was the real gap in the original review — a task whose clock did not match WMS acceptance order would silently change the queue's FIFO position and nothing would notice. It now has a committed catcher. (e)'s catcher migrating from the enum assertion to the literal wire-name assertion is worth noticing: both kill it, but only the literal also kills a silent vocabulary change.
+
+## Acceptance greps (re-run, 19 checks)
+
+| # | Check | Result |
+|---|---|---|
+| 1 | `TaskBoard` in `WmsOrderBoard.cs` | PASS |
+| 2 | `FleetTask` in `WmsOrderBoard.cs` | PASS |
+| 3 | `CreatedTask` in `WmsOrder.cs` | PASS |
+| 4 | `CreatedTask` in `WmsOrderBoard.cs` | **FAIL** — unchanged grep artifact: the board passes the task positionally (`new SubmitResult(SubmitOutcome.Created, order, created)`, `:31`); the token exists on the record member (check 3) and the behaviour is mutation-(c)-proven. Renaming the local `created` → `createdTask` would make this grep pass cosmetically (a consider, not a requirement). |
+| 5 | `new TaskBoard()` in `Program.cs` | PASS |
+| 6 | `new WmsOrderBoard(taskBoard)` in `Program.cs` | PASS |
+| 7 | no `MapToTask\|CreateTask` in `Program.cs` | PASS |
+| 8 | `lock (_gate)` in `WmsOrderBoard.cs` | PASS |
+| 9 | `MapPost` in `Program.cs` | PASS |
+| 10 | `Current = 4` in `MessageTypes.cs` | PASS |
+| 11 | `git diff --stat docs/contract` empty (vs `77f3477`) | PASS |
+| 12 | reviewed pure types untouched (vs `77f3477`) | PASS |
+| 13 | no `Results\|HttpContext\|IResult` in `FleetCore` | PASS |
+| 14 | `CreateTask` only in `FleetCore` | PASS |
+| 15 | validation before `Submit` in the endpoint (`:185` then `:189`) | PASS |
+| 16 | `"queued"` literal in `WmsOrderBoardTests.cs` | **PASS** (was FAIL) — `:73` |
+| 17 | `"ORD-1"` literal in `WmsOrderBoardTests.cs` | PASS — `:21` |
+| 18 | `ToWireName` pin in `WmsOrderBoardTests.cs` | **PASS** (was FAIL) — `:73`; `ToWireName` binds to `TaskStateWire.ToWireName` (`TaskState.cs:14`) |
+| 19 | 4 existing tests updated + 3 new present | PASS — 8 `[Fact]`s total: the four retitled lesson-20 tests all construct `new WmsOrderBoard(tasks)`, and all three new mapping tests are present with their full assertion sets |
+
+**18/19** (up from 16/19). The two real gaps — checks 16 and 18 — are closed. Check 4 remains a grep artifact, not a defect.
+
+## Explain-it check (re-review)
+
+These replace the three fix-related questions from the original review; the original's open questions still stand (see below).
+
+1. Your first attempt at the pin used `ToString()` and got `"Queued"`; the fix uses `State.ToWireName()` and got `"queued"`. Why does the status-push slice care which of those two strings the test pins, and what would the WMS have seen if a later rename changed only one of them?
+2. `Assert.Equal(Start, result.CreatedTask.CreatedAt)` passes today. `FleetTask` truncates `CreatedAt` to microseconds and `WmsOrder.ReceivedAt` is stored raw — why is the exact equality still safe with this `Start`, and what input would make the same assertion flaky?
+3. `A_second_order_adds_a_second_task` now pins the second task's id and lane but not its state or `CreatedAt`. Say out loud which mutations the count assertion kills, which the id/lane assertions kill, and which mutation (if any) could still slip through all three.
+
+**Lines and blocks that look unclear, copied, or unexplained — study these:**
+
+- `src/FleetCore/WmsOrderBoard.cs:9` — the constructor still carries the stray leading space (` public WmsOrderBoard(...)`) the original review flagged; it survived the fix commit. Copy-adapt residue, third review running.
+- `src/FleetCore.Tests/WmsOrderBoardTests.cs:99,111-112` — trailing whitespace on blank lines, and two blank lines between the submits and the asserts in `A_second_order_adds_a_second_task`. Cosmetic; the editor keeps re-adding them.
+- `src/FleetCore/WmsOrderBoard.cs:28,31` — the local is `created` while the result member is `CreatedTask`. Harmless, but it is the exact reason acceptance check 4's grep fails; know whether you want to rename the local or accept the artifact.
+- The original review's five "unclear or copied" blocks and review 20's three questions **remain unanswered** — commit `159cda7` adds no notes. The lesson gated this assignment on those answers; they are carried forward again and must be answered before the status-push or door-hardening lesson.
+
+## Revisit list (re-review additions)
+
+- **The vocabulary lesson landed — say it once more in your own words.** The enum member name (`Queued`), the C# `ToString()` of it (`"Queued"`), and the wire word (`"queued"`, set by `TaskStateWire` and consumed by record 13's SQL and the future status push) are three different things. You have now been bitten by one of the mixups; name where each of the three appears in the codebase.
+- **Assertion migration during a fix.** When you replaced the enum assertion with the literal pin, mutation (e)'s catcher changed with it. When a fix touches one assertion, re-check that the mutations it was killing are still killed — this re-review did exactly that for (e).
+- **Review 20's explain-it answers are still owed.** Three questions, five blocks. The lesson said they were not optional; two lessons have now passed without them. Answer them in writing before the next slice.
+- **Door hardening remains the last M6 gate** (record 29 §11: duplicate-submit HTTP race, `AlreadyKnown → 201`, blank Kestrel URL, wrong `MapGet` route, plus review 20's per-order log). The pure suite cannot see any of them.
+
+## End-product check (re-review)
+
+The order→task slice is now tested to the strength the spec expects for a piece that later milestones inherit: the wire vocabulary, the per-order identity, and the acceptance-time clock are all pinned by assertions that the mutation table proves are load-bearing. The next reader of this task is the status-push slice (it keys on `order.OrderId` and the ladder table in record 29 §6) and then the execution slice (it drains the same `TaskBoard` and, for the first time, *reads* it from the serve-loop thread while HTTP still writes — record 29 §5's open question). With (g) closed, a regression that silently re-dated tasks can no longer pass the suite; that protects FIFO fairness and the WMS's view of acceptance order. Nothing in this re-review changes the design verdict of the original review: the shape is right, and what remains before M6 is done is new slices (status push, cancel, WMS-outage behaviour) plus the door-hardening work — not corrections to this one.
+
+## README (re-review)
+
+Updated, per AGENTS.md: the M6 row now cites this review (re-review 1, pass), [record 29](../decisions/29-wms-order-to-task-mapping.md), and lesson 21, and stays **in progress** — status push, cancel, WMS-outage behaviour, and the door-hardening slice are still owed. The M5 row's stale test count (`159/159`) was corrected to the number measured in this re-review (`163/163`). No other README prose was touched.
