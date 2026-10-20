@@ -4,6 +4,10 @@ public sealed class WmsOrderBoard
 {
     private readonly Dictionary<string, WmsOrder> _orders = new(StringComparer.Ordinal);
     private readonly object _gate = new();
+    private readonly TaskBoard _tasks;
+
+     public WmsOrderBoard(TaskBoard tasks)
+        => _tasks = tasks ?? throw new ArgumentNullException(nameof(tasks));
 
     public SubmitResult Submit(SubmitOrderRequest request, DateTime now)
     {
@@ -12,16 +16,19 @@ public sealed class WmsOrderBoard
             if (_orders.TryGetValue(request.OrderId!, out var existing))
             {
                 return SameFields(existing, request)
-                    ? new SubmitResult(SubmitOutcome.AlreadyKnown, existing)
-                    : new SubmitResult(SubmitOutcome.Conflict, existing);
+                    ? new SubmitResult(SubmitOutcome.AlreadyKnown, existing, null)
+                    : new SubmitResult(SubmitOutcome.Conflict, existing, null);
             }
 
             var order = new WmsOrder(
                 request.OrderId!, request.Kind!, request.PalletId!, request.LaneId!,
                 WmsOrderStates.Received, now);
-
             _orders.Add(order.OrderId, order);
-            return new SubmitResult(SubmitOutcome.Created, order);
+            
+            var created = CreateTask(order);
+            _tasks.Add(created);
+            
+            return new SubmitResult(SubmitOutcome.Created, order, created);
         }
     }
 
@@ -30,6 +37,9 @@ public sealed class WmsOrderBoard
         lock (_gate)
             return _orders.TryGetValue(orderId, out order);
     }
+
+    private static FleetTask CreateTask(WmsOrder order)
+        => new(order.OrderId, order.LaneId, order.ReceivedAt);
 
     private static bool SameFields(WmsOrder existing, SubmitOrderRequest request)
         => existing.Kind == request.Kind

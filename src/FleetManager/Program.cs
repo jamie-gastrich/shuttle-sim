@@ -161,7 +161,8 @@ async Task<int> RunServeAsync()
 	await bus.ConnectAsync(CancellationToken.None);
 	var loop = new FleetServeLoop(bus, topics, health, evaluator, messaging.FleetManagerId,
 		TimeSpan.FromMilliseconds(intervalMs), () => DateTime.UtcNow);
-	var board = new WmsOrderBoard();
+	var taskBoard = new TaskBoard();
+	var board = new WmsOrderBoard(taskBoard);
 
 	Console.WriteLine($"Fleet manager serving on {topics.AllStatuses}");
 	using var stopping = new CancellationTokenSource();

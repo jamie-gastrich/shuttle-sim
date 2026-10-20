@@ -12,4 +12,4 @@ public sealed record WmsOrder(
 
 public enum SubmitOutcome { Created, AlreadyKnown, Conflict }
 
-public sealed record SubmitResult(SubmitOutcome Outcome, WmsOrder Order);
+public sealed record SubmitResult(SubmitOutcome Outcome, WmsOrder Order, FleetTask? CreatedTask);

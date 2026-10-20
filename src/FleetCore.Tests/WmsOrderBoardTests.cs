@@ -11,7 +11,8 @@ public class WmsOrderBoardTests
     [Fact]
     public void First_submit_is_created_and_received()
     {
-        var board = new WmsOrderBoard();
+        var tasks = new TaskBoard();
+        var board = new WmsOrderBoard(tasks);
 
         var result = board.Submit(Request(), Start);
 
@@ -24,7 +25,8 @@ public class WmsOrderBoardTests
     [Fact]
     public void Identical_resubmit_is_already_known_and_keeps_the_original_received_at()
     {
-        var board = new WmsOrderBoard();
+        var tasks = new TaskBoard();
+        var board = new WmsOrderBoard(tasks);
         var first  = board.Submit(Request(), Start);
         var second = board.Submit(Request(), Start.AddMinutes(1));   // <-- different now
 
@@ -36,7 +38,8 @@ public class WmsOrderBoardTests
     [Fact]
     public void Same_order_id_with_a_different_lane_is_a_conflict()
     {
-        var board = new WmsOrderBoard();
+        var tasks = new TaskBoard();
+        var board = new WmsOrderBoard(tasks);
         board.Submit(Request(), Start);
 
         var second = board.Submit(Request(laneId: "A02-L02"), Start);
@@ -47,11 +50,67 @@ public class WmsOrderBoardTests
     [Fact]
     public void Unknown_order_is_not_found()
     {
-        var board = new WmsOrderBoard();
+        var tasks = new TaskBoard();
+        var board = new WmsOrderBoard(tasks);
 
         var found = board.TryGet("ORD-unknown", out var order);
 
         Assert.False(found);
         Assert.Null(order);
+    }
+
+    [Fact]
+    public void First_submit_creates_exactly_one_queued_task()
+    {
+        var tasks = new TaskBoard();
+        var board = new WmsOrderBoard(tasks);
+
+        var result = board.Submit(Request(), Start);
+
+        Assert.NotNull(result.CreatedTask);
+        Assert.Equal("ORD-1", result.CreatedTask.TaskId);
+        Assert.Equal(result.Order.LaneId, result.CreatedTask.ToLane);
+        Assert.Equal(TaskState.Queued, result.CreatedTask.State);
+        Assert.Equal(1, tasks.Count);
+    }
+
+    [Fact]
+    public void Identical_resubmit_adds_no_second_task()
+    {
+        var tasks = new TaskBoard();
+        var board = new WmsOrderBoard(tasks);
+        board.Submit(Request(), Start);
+
+        var second = board.Submit(Request(), Start.AddMinutes(1));
+
+        Assert.Null(second.CreatedTask);
+        Assert.Equal(1, tasks.Count);
+    }
+
+    [Fact]
+    public void Conflict_adds_no_task()
+    {
+        var tasks = new TaskBoard();
+        var board = new WmsOrderBoard(tasks);
+        board.Submit(Request(), Start);
+
+        var second = board.Submit(Request(laneId: "A02-L02"), Start);
+        
+        Assert.Null(second.CreatedTask);
+        Assert.Equal(1, tasks.Count);
+    }
+
+    [Fact]
+    public void A_second_order_adds_a_second_task()
+    {
+        var tasks = new TaskBoard();
+        var board = new WmsOrderBoard(tasks);
+        var first  = board.Submit(Request(), Start);
+        var second = board.Submit(Request(orderId: "ORD-2", laneId: "A02-L02"), Start.AddMinutes(1));
+        
+        
+        Assert.NotNull(first.CreatedTask);
+        Assert.NotNull(second.CreatedTask);
+        Assert.Equal(2, tasks.Count);
     }
 }
