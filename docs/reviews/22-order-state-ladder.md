@@ -1,15 +1,59 @@
 # Review 22 — Lesson 22: the order state ladder
 
 **Reviewer:** Reviewer agent
-**Commit under review:** `3372fe1` ("M6: Lesson 22 First Attempt"), lesson material from `8e24d4f` ("M6: Lesson 22 order state ladder")
+**Commit under review:** `3372fe1` ("M6: Lesson 22 First Attempt"), lesson material from `8e24d4f` ("M6: Lesson 22 order state ladder") · **Fix commit:** `8b9e137` ("M6: Lesson 22 review and fixes") — re-reviewed in the follow-up section below
 **Lesson:** [22-order-state-ladder.md](../lessons/22-order-state-ladder.md) · **Decision:** [record 30](../decisions/30-order-state-ladder.md)
-**Verdict:** **pass with changes** (no blockers; record 30's decisions A–E are followed exactly, the build and pure suite are green at 169/169, and every mutation the lesson marked "must go red" is killed — but one explicit requirement assertion is missing (the discarded first `NoOrder` outcome), and two lesson deliverables (the e/f review notes and the stretch-probe output) are absent)
+**Verdict:** **pass** (upgraded from *pass with changes* by the follow-up review of `8b9e137`: the should-fix is fixed and verified green — build 0/0, 169/169, 22/22 acceptance greps — and the remaining open items (the explain-it questions and the mutation e/f notes) are deferred by owner decision, recorded below; see "Follow-up review")
 
-The build is clean and the pure suite is green: **RC 0, 0 warnings, 0 errors; Failed: 0, Passed: 169, Total: 169** on the non-integration filter (baseline 163, +6 — FleetCore 39 → 45, every other project unchanged). The ladder lives in its own `FleetCore` file and returns the `WmsOrderStates` constants; the sync sits inside the board's existing `lock (_gate)`, checks the four situations in record 30 §5's exact order, writes only with `order with { State = target }`, refuses backwards moves with the new `OrderRejectedException`, and takes no clock. `Program.cs`, the reviewed pure types, `src/Contracts`, and `docs/contract/` are untouched. All 22 numbered acceptance greps in lesson 22's sections 3–9 pass. The attempt commit also quietly fixed two cosmetics review 21 flagged (the constructor's stray leading space, the trailing whitespace in `Submit`) without being asked. What holds this back from a bare *pass* is one discarded assertion the requirement explicitly asked for, and the two notes the lesson owed with the mutation table and the stretch goal.
+The build is clean and the pure suite is green: **RC 0, 0 warnings, 0 errors; Failed: 0, Passed: 169, Total: 169** on the non-integration filter (baseline 163, +6 — FleetCore 39 → 45, every other project unchanged). The ladder lives in its own `FleetCore` file and returns the `WmsOrderStates` constants; the sync sits inside the board's existing `lock (_gate)`, checks the four situations in record 30 §5's exact order, writes only with `order with { State = target }`, refuses backwards moves with the new `OrderRejectedException`, and takes no clock. `Program.cs`, the reviewed pure types, `src/Contracts`, and `docs/contract/` are untouched. All 22 numbered acceptance greps in lesson 22's sections 3–9 pass. The attempt commit also quietly fixed two cosmetics review 21 flagged (the constructor's stray leading space, the trailing whitespace in `Submit`) without being asked. What holds this back from a bare *pass* is one discarded assertion the requirement explicitly asked for, and the two notes the lesson owed with the mutation table and the stretch goal. *(Historical: that state was superseded by the follow-up below — issue 1 fixed in `8b9e137`, issues 2–3 deferred by owner decision.)*
 
 ---
 
-## Commands run (exact) and what they showed
+## Follow-up review — fix commit `8b9e137` (2026-10-20)
+
+**Commit:** `8b9e137` ("M6: Lesson 22 review and fixes"), parent `3372fe1`. This section supersedes the first-pass verdict above; the first review's tables are kept unchanged as the record of that pass.
+
+**Verdict after follow-up:** **pass** (bare). The should-fix is fixed exactly as prescribed and verified below; the two open non-blockers and the explain-it questions are deferred by explicit owner decision (recorded next), not silently dropped. Everything in the table below is green.
+
+### Commands run (exact) and what they showed
+
+| # | Command | Result |
+|---|---|---|
+| F1 | `git log --oneline -6`, `git status --short`, `git rev-parse HEAD` | HEAD `8b9e137` ("M6: Lesson 22 review and fixes"), parent `3372fe1`; tree **clean** |
+| F2 | `git diff 3372fe1..8b9e137 --stat` | exactly 2 files: `docs/reviews/22-order-state-ladder.md` (+185, the first review itself) and `src/FleetCore.Tests/WmsOrderLadderTests.cs` (+1/−1). `git diff 3372fe1..8b9e137 --stat -- src` shows **only** the test file, one line — nothing else in `src/` moved. |
+| F3 | `git diff 3372fe1..8b9e137 -- src/FleetCore.Tests/WmsOrderLadderTests.cs` | exactly `-        board.SyncFromTask("LOCAL-7");` → `+        Assert.Equal(OrderSyncOutcome.NoOrder, board.SyncFromTask("LOCAL-7"));` at line 96 — the prescribed one-line fix, nothing more |
+| F4 | `cd src && dotnet build` | RC 0 — **0 Warning(s), 0 Error(s)** |
+| F5 | `cd src && dotnet test ShuttleFleet.slnx -v m --filter "Category!=Integration"` | **RC 0 — Failed: 0, Passed: 169, Skipped: 0, Total: 169.** All eight `Passed!` lines: FleetCore **45**, FleetManager 56, ShuttleCore 31, Contracts 8, TrafficCore 6, Messaging 10, MqttMessaging 3, ShuttleSim 10 — the same per-project split as the first review, no test lost, none added. |
+| F6 | `grep -n 'SyncFromTask("LOCAL-7")' src/FleetCore.Tests/WmsOrderLadderTests.cs` | line 96: `Assert.Equal(OrderSyncOutcome.NoOrder, board.SyncFromTask("LOCAL-7"));` — the should-fix is present in the committed file |
+| F7 | the 22 acceptance greps (lesson 22, sections 3–9), re-run against HEAD `8b9e137` (the three `git diff` comparisons extended from `8e24d4f..3372fe1` to `8e24d4f..8b9e137`) | **22/22 PASS** — every row of the first review's acceptance-grep table re-verified green |
+| F8 | `pgrep -af "dotnet run\|FleetManager.dll\|mosquitto"`; `docker compose -f docker/compose.yml ps` | no stray run/broker processes; no containers running. Nothing was started: the pure suite needs no broker. |
+
+**R7 is now fully satisfied.** All six required facts are present with the exact names, and the sixth now pins all three of requirement 7's expectations — `NoOrder` (line 96), no exception (the call returns), no order created (`TryGet` false at `:98-99`) — plus the second-half neither-board sync at `:100`. No lesson-listed mutation is affected: mutation (d) was already killed by the second half (spot-checked in the first review); the strengthened first half additionally kills any mutation that returns a wrong-but-non-throwing outcome for an orderless task, which the old discarded-value line could not distinguish.
+
+### Owner's deferral decision (recorded, per instruction)
+
+The owner has decided that the open non-blockers from the first review are **deferred, not required for this pass** — the professor will supply that material in a later lesson rather than the owner answering now. Waived for the pass/fail verdict, but kept on the record so nothing disappears silently:
+
+1. **The explain-it questions** (all six, plus the "study these" lines) — retained in full below, unchanged, as material for the professor's later session. The owner has not answered them; they are still owed before the status-push or execution lesson, at the professor's scheduling.
+2. **The mutation (e)/(f) real-WMS review notes** (first review, issue 2) — deferred; the professor will supply the lost-update story and the irreversible-word story in the later lesson.
+
+Under the same deferral of review-note artifacts:
+
+3. **The stretch-goal probe output** (first review, issue 3) — the owner's own copy of the 8-thread probe output is deferred with the above. The lock's behaviour is already established by the professor's probe in lesson 22's verification table (3/3 pass with the lock, 3/3 crash without) and by mutation (e)'s predicted survival, so this remains an evidence-attachment gap, not a safety gap.
+
+### Issue status after the follow-up
+
+| First-review issue | Status |
+|---|---|
+| 1 — LOCAL-7 `NoOrder` never asserted (should-fix) | **FIXED** in `8b9e137` — verified by F3 and F6; suite green (F5) |
+| 2 — mutation e/f real-WMS notes absent (follow-up non-blocker) | **DEFERRED** by owner decision; professor to supply in a later lesson |
+| 3 — stretch-probe output absent (follow-up non-blocker) | **DEFERRED** by owner decision; professor to supply in a later lesson |
+| 4 — `Rank` matches string literals while `ForTask` returns constants (consider) | **OPEN**, non-blocking; align when the ladder file is next touched |
+| 5 — non-blocking notes (refusal message phrasing, ctor continuation indent, trailing newlines, pair-backstop test, `ArgumentOutOfRangeException` arms unpinned) | **OPEN**, carried into the status-push / execution slices |
+
+---
+
+## Commands run (exact) and what they showed — first review, `3372fe1`
 
 | # | Command | Result |
 |---|---|---|
@@ -39,7 +83,7 @@ The build is clean and the pure suite is green: **RC 0, 0 warnings, 0 errors; Fa
 - [x] **R4 `SyncFromTask` on the board** — signature `public OrderSyncOutcome SyncFromTask(string taskId)`, no `now` (`WmsOrderBoard.cs:49`); whole method inside `lock (_gate)` (`:51-65`); checks in record 30 §5's order: no order → `NoOrder` (`:53-54`), target equals stored → `AlreadyThere` (`:57-58`), target not above stored → throw `OrderRejectedException` (`:60-61`), else write and return `Advanced` (`:63-64`); "above" via `WmsOrderLadder.Rank` with rungs 0/1/2/2 (`Ladder.cs:15-22`); the write is `order with { State = target }` (`:63`), never an assignment to `State`; `Submit` and `TryGet` untouched apart from whitespace/indent cleanup.
 - [x] **R5 `Program.cs` — no change at all** — no ladder token appears in the file, and the diff against `8e24d4f` is empty (commands 6).
 - [x] **R6 do not touch the reviewed types, the vocabulary, or the wire** — `FleetTask.cs`, `TaskBoard.cs`, `WmsOrderStates.cs`, `TaskDispatcher.cs`, `RunLoop.cs`, `FleetServeLoop.cs`, `src/Contracts/`, `docs/contract/` all diff-empty (commands 5–6); `ContractVersion.Current = 4` (grep 7.1).
-- [ ] **R7 tests: six new pure facts** — **PARTIAL.** All six are present with the exact required names (`WmsOrderLadderTests.cs:19,29,42,63,77,90`), all green, none skipped, and five of the six match the assignment's assertion spec literally. The sixth (`Sync_of_a_task_with_no_order_returns_NoOrder`) has the right two-part structure but **discards the first sync's return value** (`:96`): it proves "no exception" and (via `TryGet` at `:98-99`) "no order created" for LOCAL-7, and it pins `NoOrder` only for the second, in-neither-board id (`:100`). The requirement says "sync its id: expect `NoOrder`, no exception, and no order created" — the `NoOrder` expectation for the first sync is missing. See issue 1. No lesson-listed mutation survives because of this (mutation d is killed by the second half — spot-checked, below), so this is a strength gap, not decoration.
+- [x] **R7 tests: six new pure facts** — **PARTIAL at first review; now SATISFIED (fixed in `8b9e137`, verified in the follow-up).** All six are present with the exact required names (`WmsOrderLadderTests.cs:19,29,42,63,77,90`), all green, none skipped. Five matched the assignment's assertion spec literally from the start. The sixth (`Sync_of_a_task_with_no_order_returns_NoOrder`) **discarded the first sync's return value** at the first review (`:96`); fixed in `8b9e137` — line 96 is now `Assert.Equal(OrderSyncOutcome.NoOrder, board.SyncFromTask("LOCAL-7"));`, so all three of requirement 7's expectations ("`NoOrder`, no exception, and no order created") are pinned. No lesson-listed mutation survives or regressed because of the change (mutation d is killed by the second half — spot-checked in the first review).
 
 ### Acceptance greps (lesson 22, sections 3–9, 22 checks)
 
@@ -97,7 +141,7 @@ The owner ran all six mutations in scratch; this review accepts that report for 
 
 ## Top issues, ranked
 
-### 1. SHOULD-FIX — the LOCAL-7 sync's `NoOrder` outcome is never asserted
+### 1. ~~SHOULD-FIX~~ — the LOCAL-7 sync's `NoOrder` outcome is never asserted — **FIXED in `8b9e137`** (kept below as the record of what was found)
 `src/FleetCore.Tests/WmsOrderLadderTests.cs:96`
 
 ```csharp
@@ -106,10 +150,10 @@ board.SyncFromTask("LOCAL-7");
 
 The test is named `Sync_of_a_task_with_no_order_returns_NoOrder`, and requirement 7 says: *"sync its id: expect `NoOrder`, no exception, and no order created."* The test proves "no exception" (the call returns) and "no order created" (`:98-99`), but the outcome itself is thrown away. A sync that returned `AlreadyThere` (or anything else) for a task with no order behind it — while still not creating an order — would pass this test on its first half. In a real fleet, `NoOrder` is the signal a future caller (the execution loop, once local-move tasks exist) may one day branch on; a test that cannot distinguish `NoOrder` from a silent wrong outcome pins only half the contract. One line fixes it: `Assert.Equal(OrderSyncOutcome.NoOrder, board.SyncFromTask("LOCAL-7"));`. This is a weakened assertion in the same family as review 21's issues 1–3 — no lesson-listed mutation survives because of it (mutation (d) is caught by the second half, spot-checked above), so it is not a blocker, but the requirement asked for it by name.
 
-### 2. FOLLOW-UP (non-blocker) — the mutation e/f review notes the lesson owes are absent
+### 2. FOLLOW-UP (non-blocker) — the mutation e/f review notes the lesson owes are absent — **DEFERRED by owner decision** (kept below; professor to supply in a later lesson)
 The lesson's mutation-check section ends: *"For (e) and (f), write down in your review notes what each would do to a real WMS — a lost update you can see, and a word moving backwards you cannot unsay."* The commit message is a single line with no body, and no file in the commit contains those notes. The lesson telegraphs the shape of the answers, but the point of the exercise is the owner producing them: for (e), a concrete lost-update story (two syncs interleave on the dictionary, one order's `Advanced` write is overwritten, the WMS is never told the pallet started — a pallet that moved in silence); for (f), the irreversibility story (once status push is live, a backwards word is a statement to the WMS that cannot be unsent — an operator sees `done`, then `in_progress` reappears, and the trust in every earlier update dies). Write both, in your own words, before the status-push lesson — that slice keys its whole send policy on this sync's outcomes.
 
-### 3. FOLLOW-UP (non-blocker) — the stretch-goal probe output is not in any owner artifact
+### 3. FOLLOW-UP (non-blocker) — the stretch-goal probe output is not in any owner artifact — **DEFERRED by owner decision** (kept below; professor to supply in a later lesson)
 The stretch goal asks for the 8-thread probe with its output kept "in your review notes." No probe, no output, no notes exist in the commit. The lock's real work is already proven — the professor ran the probe (lesson verification table: 3/3 pass with the lock, 3/3 crash without) and mutation (e) surviving the committed suite was predicted — so this is an evidence-attachment gap, not a safety gap. Run the probe once yourself in `/tmp/opencode`, paste the output into your notes (or a future review-response commit to `docs/`), and delete the scratch. You will meet the same shape again in the execution slice, when the dispatcher drains the task board from the serve-loop thread while HTTP still writes.
 
 ### 4. CONSIDER — `Rank` matches string literals while `ForTask` returns constants
@@ -146,6 +190,8 @@ The stretch goal asks for the 8-thread probe with its output kept "in your revie
 
 The owner must answer these out loud, no notes, before the status-push or execution lesson. They go deeper than the lesson's own "Say it out loud" section, which the owner should also be able to answer cold.
 
+> **Status (follow-up, 2026-10-20):** deferred by owner decision — the professor will supply this material in a later lesson rather than the owner answering now. The questions stay here unchanged and are still owed before the status-push or execution lesson; they are waived for this review's pass/fail verdict only.
+
 1. **(Required — check order.)** In `SyncFromTask`, the order lookup runs before `_tasks.Get`. Mutation (d), which moves the task lookup first, is killed *only* by the second half of the no-order test — the id that is in neither board. Walk through what `_tasks.Get("LOCAL-7")` does in the mutated code and explain why the first half of the test stays green, then name the exception a local-move task id would throw at the fleet loop if the two lines were ever swapped in production.
 2. **(Required — literals vs constants.)** `Ladder_maps_every_task_state_to_its_order_word` asserts `Assert.Equal("in_progress", WmsOrderLadder.ForTask(TaskState.InProgress))`. Why does comparing the return to the literal `WmsOrderStates.InProgress` pin strictly less — what silent wire change survives a constant-vs-itself assertion that the literal catches — and then answer the follow-up: `Rank` matches on literals (`"received" => 0`) while `ForTask` returns constants. Defend or condemn that inconsistency in one sentence each.
 3. **(Deeper than lesson Q3.)** `Assigned` maps to `received`, and the requeue test proves the order does not move when a task goes `Assigned → Queued`. Say out loud what the WMS would have been told on the M5 fault-before-movement path if `Assigned` mapped to `in_progress` instead — trace the requeue, the sync, and the status-push send that would follow — and why sharing one rung is what makes the task ladder's only legal backwards step invisible.
@@ -155,7 +201,7 @@ The owner must answer these out loud, no notes, before the status-push or execut
 
 **Lines and blocks that look unclear, copied, or unexplained — study these:**
 
-- `src/FleetCore.Tests/WmsOrderLadderTests.cs:96` — `board.SyncFromTask("LOCAL-7");` with the result discarded, in a test whose name says the call "returns NoOrder." Where did that line come from, and what would you change it to? (Issue 1.)
+- `src/FleetCore.Tests/WmsOrderLadderTests.cs:96` — was `board.SyncFromTask("LOCAL-7");` with the result discarded, in a test whose name says the call "returns NoOrder." Where did that line come from, and what would you change it to? (Issue 1 — since fixed in `8b9e137`; the committed line 96 is the answer.)
 - `src/FleetCore/WmsOrderLadder.cs:17-20` — the literal arms of `Rank`. Why do these four lines spell the words when `ForTask` refuses to? (Issue 4.)
 - `src/FleetCore/WmsOrderBoard.cs:60-61` — `if (WmsOrderLadder.Rank(target) <= WmsOrderLadder.Rank(order.State))`. Why `<=` and not `<` — what specific pair of words does `<` alone fail to refuse, and which M5 path makes that pair reachable?
 - `src/FleetCore/WmsOrderBoard.cs:10` — `       => _tasks = tasks ?? throw …` at 7 spaces. What is the house continuation width, and why does this shape keep surviving edits? (Copy-adapt residue, fourth review running — the leading-space variant is fixed, the continuation variant is not.)
@@ -166,7 +212,7 @@ The owner must answer these out loud, no notes, before the status-push or execut
 ## Revisit list
 
 - **A discarded return value proves only "did not throw."** Review 21's literal-pin lesson, one step further: here it was the *outcome enum* that went unpinned. Say out loud which of the three requirement-listed expectations ("NoOrder, no exception, no order created") each line of the no-order test actually pins. (Issue 1.)
-- **Mutation notes are a deliverable, not a formality.** Mutations (e) and (f) surviving was predicted and is fine; inheriting the professor's one-line prediction silently is not. Write the two real-WMS stories in your own words — a lost update you can see, and a word moving backwards you cannot unsay. (Issue 2.)
+- **Mutation notes are a deliverable, not a formality.** Mutations (e) and (f) surviving was predicted and is fine; inheriting the professor's one-line prediction silently is not. Write the two real-WMS stories in your own words — a lost update you can see, and a word moving backwards you cannot unsay. (Issue 2 — deferred by owner decision; professor to supply in a later lesson.)
 - **Constant patterns exist.** `WmsOrderStates.Received => 0` compiles. Vocabulary should have one spelling per file; know when a `switch` arm can be a constant pattern. (Issue 4.)
 - **Rule vs backstop, third lesson running.** `AlreadyThere` is the rule (idempotence, called at every transition); `OrderRejectedException` is the backstop (a loud bug report, unreachable through legal paths). Which slice would ever *catch* each? (Mutation (f) is the answer to why the backstop cannot be a returned outcome.)
 - **The pair backstop on the read side.** An order whose task has vanished throws `KeyNotFoundException` out of `SyncFromTask` — record 30 §5 says it must not be swallowed, and nothing tests it. When persistence lands, that throw is the tripwire for a half-restored pair. Know where it surfaces.
@@ -182,4 +228,4 @@ This slice installs the seam M6's second half depends on: the order's stored `St
 
 ## README
 
-**Not updated.** The verdict is *pass with changes*: no blockers, but one requirement-literal assertion is missing and two lesson deliverables (mutation e/f notes, stretch-probe output) are absent, so per AGENTS.md the M6 row stays `in progress` and nothing in `README.md` was touched — verified with `git status --short` (clean) after writing this file. M6 is not close to done: status push, cancel, task execution in `serve`, WMS-outage behaviour, and the door-hardening slice are all still owed.
+**Not updated — and correctly so.** The follow-up verdict is a bare *pass*, but lesson 22 is one slice **inside** M6, not a milestone: the milestone table has no per-lesson rows (prior slice passes in M5 and M6 were recorded the same way — the row's state only moves at milestone level), and M6's done-when ("orders flow from the WMS to completed pallets and back, and a WMS outage or a bad order does not corrupt fleet state") is **not met**: nothing in `serve` moves a task yet (lesson 22's own measured fact), there is no status push, no cancel, and the door-hardening slice is still owed — so no order can reach a completed pallet. Marking M6 `done` would be false, and per AGENTS.md a milestone state changes only when its done-when criteria are met and the review passes. The M6 row therefore stays **`in progress`**, unchanged, and nothing in `README.md` was touched — verified with `git status --short` (clean) after writing this update.
