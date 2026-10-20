@@ -68,10 +68,11 @@ public class WmsOrderBoardTests
         var result = board.Submit(Request(), Start);
 
         Assert.NotNull(result.CreatedTask);
-        Assert.Equal("ORD-1", result.CreatedTask.TaskId);
+        Assert.Equal(result.Order.OrderId, result.CreatedTask.TaskId);
         Assert.Equal(result.Order.LaneId, result.CreatedTask.ToLane);
-        Assert.Equal(TaskState.Queued, result.CreatedTask.State);
+        Assert.Equal("queued", result.CreatedTask.State.ToWireName());
         Assert.Equal(1, tasks.Count);
+        Assert.Equal(Start, result.CreatedTask.CreatedAt);
     }
 
     [Fact]
@@ -112,5 +113,7 @@ public class WmsOrderBoardTests
         Assert.NotNull(first.CreatedTask);
         Assert.NotNull(second.CreatedTask);
         Assert.Equal(2, tasks.Count);
+        Assert.Equal("ORD-2", second.CreatedTask.TaskId);
+        Assert.Equal("A02-L02", second.CreatedTask.ToLane);
     }
 }
