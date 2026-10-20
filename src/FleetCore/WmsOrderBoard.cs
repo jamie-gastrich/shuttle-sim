@@ -6,8 +6,8 @@ public sealed class WmsOrderBoard
     private readonly object _gate = new();
     private readonly TaskBoard _tasks;
 
-     public WmsOrderBoard(TaskBoard tasks)
-        => _tasks = tasks ?? throw new ArgumentNullException(nameof(tasks));
+    public WmsOrderBoard(TaskBoard tasks)
+       => _tasks = tasks ?? throw new ArgumentNullException(nameof(tasks));
 
     public SubmitResult Submit(SubmitOrderRequest request, DateTime now)
     {
@@ -24,10 +24,10 @@ public sealed class WmsOrderBoard
                 request.OrderId!, request.Kind!, request.PalletId!, request.LaneId!,
                 WmsOrderStates.Received, now);
             _orders.Add(order.OrderId, order);
-            
+
             var created = CreateTask(order);
             _tasks.Add(created);
-            
+
             return new SubmitResult(SubmitOutcome.Created, order, created);
         }
     }
@@ -45,4 +45,23 @@ public sealed class WmsOrderBoard
         => existing.Kind == request.Kind
         && existing.PalletId == request.PalletId
         && existing.LaneId == request.LaneId;
+
+    public OrderSyncOutcome SyncFromTask(string taskId)
+    {
+        lock (_gate)
+        {
+            if (!_orders.TryGetValue(taskId, out var order))
+                return OrderSyncOutcome.NoOrder;
+
+            var target = WmsOrderLadder.ForTask(_tasks.Get(taskId).State);
+            if (target == order.State)
+                return OrderSyncOutcome.AlreadyThere;
+
+            if (WmsOrderLadder.Rank(target) <= WmsOrderLadder.Rank(order.State))
+                throw new OrderRejectedException($"The {target} is not above {order.State}");
+
+            _orders[taskId] = order with { State = target };
+            return OrderSyncOutcome.Advanced;
+        }
+    }
 }

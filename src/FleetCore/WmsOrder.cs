@@ -11,5 +11,6 @@ public sealed record WmsOrder(
     DateTime ReceivedAt);
 
 public enum SubmitOutcome { Created, AlreadyKnown, Conflict }
+public enum OrderSyncOutcome { Advanced, AlreadyThere, NoOrder }
 
 public sealed record SubmitResult(SubmitOutcome Outcome, WmsOrder Order, FleetTask? CreatedTask);
