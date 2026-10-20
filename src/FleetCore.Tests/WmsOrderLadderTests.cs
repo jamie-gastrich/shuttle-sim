@@ -93,7 +93,7 @@ public class WmsOrderLadderTests
         var board = new WmsOrderBoard(tasks);
 
         tasks.Add(new FleetTask("LOCAL-7", "A01-L01", Start));
-        board.SyncFromTask("LOCAL-7");
+        Assert.Equal(OrderSyncOutcome.NoOrder, board.SyncFromTask("LOCAL-7"));
 
         Assert.False(board.TryGet("LOCAL-7", out var order));
         Assert.Null(order);
