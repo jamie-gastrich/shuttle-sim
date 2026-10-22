@@ -10,6 +10,9 @@ public class WmsContractLiteralsTests
     public void Orders_route() => Assert.Equal("/api/orders", WmsRoutes.Orders);
 
     [Fact]
+    public void Order_status_route_is_pinned() => Assert.Equal("/api/order-status", WmsRoutes.OrderStatus);
+
+    [Fact]
     public void Order_route_builds_the_path() =>
         Assert.Equal("/api/orders/ORD-1", WmsRoutes.Order("ORD-1"));
 }

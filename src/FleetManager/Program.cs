@@ -153,6 +153,16 @@ async Task<int> RunServeAsync()
 	var listenUrl = configuration.GetValue<string>("Kestrel:Endpoints:Http:Url");
 	if (string.IsNullOrWhiteSpace(listenUrl))
 		throw new InvalidOperationException("Kestrel:Endpoints:Http:Url must be set.");
+	var wmsBaseUrl = configuration.GetValue<string>("Wms:BaseUrl")
+		?? throw new InvalidOperationException("Wms:BaseUrl is missing.");
+	if (!Uri.TryCreate(wmsBaseUrl, UriKind.Absolute, out var wmsUri))
+		throw new InvalidOperationException("Wms:BaseUrl must be an absolute URL.");
+	var wmsTimeoutMs = configuration.GetValue<int>("Wms:StatusTimeoutMs");
+	if (wmsTimeoutMs < 1)
+		throw new InvalidOperationException("Wms:StatusTimeoutMs must be positive.");
+	var wmsIntervalMs = configuration.GetValue<int>("Wms:StatusIntervalMs");
+	if (wmsIntervalMs < 1)
+		throw new InvalidOperationException("Wms:StatusIntervalMs must be positive.");
 
 	var topics = new TopicScheme(messaging.TopicRoot);
 	var health = new ShuttleHealth(TimeSpan.FromMilliseconds(livenessMs));
@@ -163,6 +173,15 @@ async Task<int> RunServeAsync()
 		TimeSpan.FromMilliseconds(intervalMs), () => DateTime.UtcNow);
 	var taskBoard = new TaskBoard();
 	var board = new WmsOrderBoard(taskBoard);
+	
+	var outbox = new WmsStatusOutbox();
+	using var wmsClient = new HttpClient
+	{
+		BaseAddress = wmsUri,
+		Timeout = TimeSpan.FromMilliseconds(wmsTimeoutMs),
+	};
+	var pusher = new WmsStatusPusher(board, outbox, wmsClient, TimeSpan.FromMilliseconds(wmsIntervalMs));
+	
 
 	Console.WriteLine($"Fleet manager serving on {topics.AllStatuses}");
 	using var stopping = new CancellationTokenSource();
@@ -174,6 +193,7 @@ async Task<int> RunServeAsync()
 	};
 	Console.CancelKeyPress += cancelHandler;
 	var loopTask = loop.RunAsync(stopping.Token);
+	var pushTask = pusher.RunAsync(stopping.Token);
 	var webBuilder = WebApplication.CreateBuilder(new WebApplicationOptions
 	{
 		Args = args,
@@ -216,6 +236,14 @@ async Task<int> RunServeAsync()
 	catch (OperationCanceledException) when (stopping.IsCancellationRequested)
 	{
 		// Expected: the loop stopped because we cancelled it.
+	}
+	try
+	{
+		await pushTask;
+	}
+	catch (OperationCanceledException) when (stopping.IsCancellationRequested)
+	{
+		// Expected: the pushTask stopped because we cancelled it.
 	}
 	try
 	{

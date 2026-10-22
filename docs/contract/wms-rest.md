@@ -1,6 +1,6 @@
-# WMS REST contract v1
+# WMS REST contract v2
 
-Version: 1
+Version: 2
 
 ## SubmitOrderRequest
 
@@ -84,6 +84,33 @@ application/problem+json
 | `kind`     | `store` or `retrieve`  | `kind must be 'store' or 'retrieve'.` |
 | `palletId` | not null or whitespace | `palletId is required.`               |
 | `laneId`   | not null or whitespace | `laneId is required.`                 |
+
+---
+
+## Order status push (fleet manager → WMS)
+
+The fleet manager pushes every order state change to the WMS. It POSTs the
+`WmsOrder` body from the table above (same field names, camelCase JSON) to the
+route below, on the WMS's own base URL. The fleet manager's `Wms:BaseUrl`
+setting points at that URL.
+
+| Route | Body | Content type |
+| --- | --- | --- |
+| `POST /api/order-status` | the `WmsOrder` object | `application/json` |
+
+| Situation | WMS reply | Fleet manager behaviour |
+| --- | --- | --- |
+| Accepted | any `2xx` | delivered; nothing more to send for that word |
+| Rejected | anything else (4xx, 5xx) | not delivered; the same body is sent again later |
+| Timed out or unreachable | no reply at all | not delivered; the same body is sent again later |
+
+Notes:
+
+- At least once: the same body may arrive more than once. A WMS that has
+  already applied a word must treat a repeat as a duplicate, not as a new
+  event.
+- `state` is the order's current place in the ladder, not a history. A newer
+  push for the same `orderId` replaces what came before.
 
 ---
 
