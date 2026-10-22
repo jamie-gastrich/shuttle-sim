@@ -42,7 +42,7 @@ public sealed class PostgresFleetTaskRepository : IFleetTaskRepository
 
     public string ConnectionString => _connectionString;
 
-    public async Task SaveAsync(FleetTask task, NpgsqlConnection connection, NpgsqlTransaction? transaction, CancellationToken cancellationToken)
+    internal async Task SaveAsync(FleetTask task, NpgsqlConnection connection, NpgsqlTransaction? transaction, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(task);
         ArgumentNullException.ThrowIfNull(connection);

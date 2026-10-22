@@ -197,10 +197,24 @@ async Task<int> RunServeAsync()
 	var orderRepository = new PostgresWmsOrderRepository(connectionString!);
 
 	// Restore before the bus connects, so the first tick sees a full fleet manager.
-	var restoredTasks = await taskRepository.LoadAllAsync(CancellationToken.None);
+	// Retry a few times in case PostgreSQL is still starting.
+	List<FleetTask> restoredTasks = new();
+	List<WmsOrder> restoredOrders = new();
+	for (var attempt = 1; attempt <= 3; attempt++)
+	{
+		try
+		{
+			restoredTasks = (await taskRepository.LoadAllAsync(CancellationToken.None)).ToList();
+			restoredOrders = (await orderRepository.LoadAllAsync(CancellationToken.None)).ToList();
+			break;
+		}
+		catch when (attempt < 3)
+		{
+			await Task.Delay(TimeSpan.FromMilliseconds(500), CancellationToken.None);
+		}
+	}
 	foreach (var restoredTask in restoredTasks)
 		taskBoard.Add(restoredTask);
-	var restoredOrders = await orderRepository.LoadAllAsync(CancellationToken.None);
 	foreach (var restoredOrder in restoredOrders)
 		board.Load(restoredOrder);
 

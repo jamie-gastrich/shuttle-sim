@@ -77,6 +77,8 @@ public class RestartSurvivalTests
         var orderRepository = new PostgresWmsOrderRepository(connectionString);
         await TestDatabase.ResetAsync(taskRepository, cancellationToken);
 
+        // Ensure the wms_orders table exists before clearing it.
+        await orderRepository.GetAsync(TestDatabase.SentinelTaskId, cancellationToken);
         await using (var connection = new Npgsql.NpgsqlConnection(connectionString))
         {
             await connection.OpenAsync(cancellationToken);

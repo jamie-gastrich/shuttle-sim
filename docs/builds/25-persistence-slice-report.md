@@ -1,6 +1,6 @@
 # Build report: Lesson 25 — The persistence slice
 
-Owner sign-off: Jamie
+Owner sign-off:
 
 ## Summary
 
@@ -72,6 +72,12 @@ cd src && dotnet test ShuttleFleet.slnx -v m --filter "Category=Integration"
 ## Lesson 25 R4 (resolved)
 
 The professor updated R4, §4.3, the worked example, the hints and decision 34 §5 to the `MarkPending`-for-in-flight-tasks rule. The implementation matches.
+
+## Fixes after review
+
+- `PostgresWmsOrderRepository` and `PostgresFleetTaskRepository` transactional `SaveAsync` overloads are now `internal`, shrinking the public surface to the interface only.
+- `serve` restore now retries up to three times with a 500 ms delay in case PostgreSQL is still starting.
+- Added a comment in `TaskDispatcher.SaveAsync` explaining the cast-and-transaction branch. (Issue 1, the storage-type leak, is left as a design note: the reviewer called it acceptable for this slice.)
 
 ## Stopped early
 

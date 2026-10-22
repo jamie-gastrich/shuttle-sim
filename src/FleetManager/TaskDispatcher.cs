@@ -58,6 +58,8 @@ public sealed class TaskDispatcher (TaskBoard board, IFleetTaskRepository reposi
 
     private async Task SaveAsync(FleetTask task, CancellationToken cancellationToken)
     {
+        // Transactional path only when both stores are PostgreSQL; otherwise save
+        // the task (and the order, if a repo is present) as separate calls.
         if (_orderRepository is PostgresWmsOrderRepository pgOrder
             && _repository is PostgresFleetTaskRepository pgTask
             && !string.IsNullOrWhiteSpace(_connectionString))

@@ -52,7 +52,7 @@ public sealed class PostgresWmsOrderRepository : IWmsOrderRepository
         await SaveOrderAsync(connection, null, order, cancellationToken);
     }
 
-    public async Task SaveAsync(WmsOrder order, NpgsqlConnection connection, NpgsqlTransaction? transaction, CancellationToken cancellationToken)
+    internal async Task SaveAsync(WmsOrder order, NpgsqlConnection connection, NpgsqlTransaction? transaction, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(order);
         ArgumentNullException.ThrowIfNull(connection);
