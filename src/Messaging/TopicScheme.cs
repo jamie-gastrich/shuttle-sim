@@ -21,4 +21,5 @@ public sealed class TopicScheme
     public string RecoveryCommand(string shuttleId) => $"{_root}/{shuttleId}/recoveryCommand";
     public string RecoveryAck(string shuttleId) => $"{_root}/{shuttleId}/recoveryAck";
     public string AllRecoveryAcks => $"{_root}/+/recoveryAck";
+    public string OperatorCommand => $"{_root}/operator/command";
 }

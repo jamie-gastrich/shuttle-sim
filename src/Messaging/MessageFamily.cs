@@ -7,4 +7,5 @@ public enum MessageFamily
     Status,
     Alarm,
     Recovery,
+    Json
 }

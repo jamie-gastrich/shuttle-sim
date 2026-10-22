@@ -189,12 +189,13 @@ async Task<int> RunServeAsync()
 	await bus.ConnectAsync(CancellationToken.None);
 	var loop = new FleetServeLoop(bus, topics, health, evaluator, messaging.FleetManagerId,
 		TimeSpan.FromMilliseconds(intervalMs), () => DateTime.UtcNow);
-	var taskBoard = new TaskBoard();
+	var taskBoard = new FleetCore.TaskBoard();
 	var board = new WmsOrderBoard(taskBoard);
 	var outbox = new WmsStatusOutbox();
 	var orderSync = new OrderSync(board, outbox);
 	var taskRepository = new PostgresFleetTaskRepository(connectionString!);
 	var orderRepository = new PostgresWmsOrderRepository(connectionString!);
+	var alarmRepository = new PostgresAlarmRepository(connectionString!);
 
 	// Restore before the bus connects, so the first tick sees a full fleet manager.
 	// Retry a few times in case PostgreSQL is still starting.
@@ -243,6 +244,7 @@ async Task<int> RunServeAsync()
 
 	await bus.SubscribeAsync(topics.AllStatuses, MessageFamily.Status, execution.HandleStatusAsync, CancellationToken.None);
 	await bus.SubscribeAsync(topics.AllAcks, MessageFamily.Ack, sender.OnAckReceivedAsync, CancellationToken.None);
+	await bus.SubscribeAsync(topics.OperatorCommand, MessageFamily.Json, HandleOperatorCommandAsync, CancellationToken.None);
 	Console.WriteLine($"Fleet manager serving on {topics.AllStatuses}");
 	using var stopping = new CancellationTokenSource();
 	var stopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -279,6 +281,34 @@ async Task<int> RunServeAsync()
 		board.TryGet(orderId, out var order)
 			? Results.Ok(order)
 			: Results.Problem(statusCode: 404, title: "Unknown order"));
+
+	webApp.MapGet(WmsRoutes.Shuttle("{shuttleId}"), (string shuttleId) =>
+		registry.TryGet(shuttleId, out var snap)
+			? Results.Ok(snap)
+			: Results.Problem(statusCode: 404, title: "Unknown shuttle"));
+
+	webApp.MapGet(WmsRoutes.TaskQueue, () =>
+		taskBoard.Queued()
+			.Select(t => new { t.TaskId, t.State, t.AssignedShuttleId })
+			.ToList());
+	async Task HandleOperatorCommandAsync(MessageReceived message, CancellationToken cancellationToken)
+{
+    var cmd = JsonSerializer.Deserialize<OperatorCommandMessage>(message.Payload);
+    if (cmd is null) return;
+
+    switch (cmd.Kind)
+    {
+        case OperatorCommandMessage.Command.Pause:
+            await taskBoard.PauseAllExcept(cmd.ShuttleId, cancellationToken);
+            break;
+        case OperatorCommandMessage.Command.Resume:
+            await taskBoard.ResumeAllExcept(cmd.ShuttleId, cancellationToken);
+            break;
+        case OperatorCommandMessage.Command.Acknowledge:
+            await alarmRepository.AcknowledgeAsync(cmd.ShuttleId, cancellationToken);
+            break;
+    }
+}
 	var webTask = webApp.RunAsync(stopping.Token);
 	try
 	{

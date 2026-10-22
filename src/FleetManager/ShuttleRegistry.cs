@@ -28,6 +28,14 @@ public sealed class ShuttleRegistry
         }
     }
 
+    public bool TryGet(string shuttleId, out ShuttleSnapshot? snapshot)
+    {
+        lock (_gate)
+        {
+            return _shuttles.TryGetValue(shuttleId, out snapshot);
+        }
+    }
+
     public string? PositionOf(string shuttleId)
     {
         lock (_gate)
