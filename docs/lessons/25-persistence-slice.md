@@ -169,10 +169,9 @@ foreach (var order in orders)
 **The code.** After restoring both boards:
 
 ```csharp
-foreach (var task in taskBoard tasks that are in flight)
+foreach (var task in restoredTasks)
 {
-    var outcome = orderBoard.SyncFromTask(task.TaskId);
-    if (outcome == OrderSyncOutcome.Advanced)
+    if (task.State is TaskState.InProgress or TaskState.Done or TaskState.Failed)
         outbox.MarkPending(task.TaskId);
 }
 ```
@@ -180,10 +179,10 @@ foreach (var task in taskBoard tasks that are in flight)
 Line by line:
 
 - Walk the restored tasks.
-- `orderBoard.SyncFromTask(task.TaskId)` — the same call the transition line makes. It compares the task's word with the order's word and returns `Advanced` (the word moved), `AlreadyThere` (it did not) or `NoOrder` (no order for this task).
-- `MarkPending` only when the outcome is `Advanced`. A task that was `Queued` or `Assigned` before the crash has an order word of `received`, and `received` is the intake word — the WMS already got it in the `201` body. Re-pushing it would be noise.
+- Only the in-flight ones owe a word: `InProgress`, `Done` and `Failed`. A `Queued` or `Assigned` task means the WMS already heard `received` at intake, so it owes nothing.
+- `outbox.MarkPending(task.TaskId)` — one call per owed task. The sender reads the current word at send time, so re-pushing a word the WMS already heard is harmless.
 
-**Why re-running the sync is the safe choice.** The order's word was saved before the crash, so after restore it is already correct. Re-running the sync asks "is the task ahead of the order?" and answers honestly. If the task advanced further before the crash than the saved word shows, the sync moves the word and marks it owed. If they already agree, nothing is marked. No special-case code, no guesses about what was pushed.
+**Why marking every in-flight task is the safe choice.** The outbox was in memory and is empty after a restart, so we cannot know which words were already pushed. The safe reconstruction is: every in-flight task owes at least one word. Re-pushing is harmless because the sender reads the current word at send time and the WMS handles a repeated word. No guessing about push history.
 
 **The honest limit.** This re-marks words that were owed at the moment of the crash. A word that was successfully pushed and acked before the crash is not in the outbox (it was cleared), so it is not re-marked. That is correct: the WMS already heard it.
 
@@ -251,8 +250,7 @@ var board2 = new WmsOrderBoard(tasks2);
 board2.Load(savedOrder);
 
 var outbox2 = new WmsStatusOutbox();
-var outcome = board2.SyncFromTask(savedTask.TaskId);
-if (outcome == OrderSyncOutcome.Advanced)
+if (savedTask.State is TaskState.InProgress or TaskState.Done or TaskState.Failed)
     outbox2.MarkPending(savedTask.TaskId);
 
 Console.WriteLine($"after restore: task {tasks2.Get("ORD-1").State.ToWireName()}, order {board2.TryGet("ORD-1", out var o2) ? o2.State : "?"}, owed {outbox2.PendingCount}");
@@ -315,7 +313,7 @@ Take the worked example and make it run **for real**, inside `serve`, with Postg
 
 **R3 — `serve` restores before it connects.** In `RunServeAsync`, after building `taskBoard` and `board`, and before `await bus.ConnectAsync`, load all tasks and all orders and populate both boards. Then re-mark owed words (R4). The bus must not be connected during restore.
 
-**R4 — re-marking owed words.** For each restored task whose state is `InProgress`, `Done` or `Failed`: call `_board.SyncFromTask(task.TaskId)`; if it returns `Advanced`, call `outbox.MarkPending(task.TaskId)`. A `Queued` or `Assigned` task marks nothing.
+**R4 — re-marking owed words.** For each restored task whose state is `InProgress`, `Done` or `Failed`: call `outbox.MarkPending(task.TaskId)`. A `Queued` or `Assigned` task marks nothing. The outbox was in memory and is empty after a restart, so every in-flight task owes at least one word; the sender reads the current word at send time, so re-pushing is safe.
 
 **R5 — one transaction for the pair.** In the dispatcher, after a move, save the task and its matching order in one transaction. If the order cannot be found, throw `InvalidOperationException` — a task with no order is a bug, not a skip.
 

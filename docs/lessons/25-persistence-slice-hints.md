@@ -10,7 +10,7 @@
 
 - Add `Load(WmsOrder order)` to `WmsOrderBoard`: put the order into the dictionary, throw if the id already exists. Do not create a task and do not sync.
 - In the dispatcher, after the move and before `SaveAsync`, look up the order for the task id. Save both in one transaction: open a connection, begin a transaction, save the task, save the order, commit. If the order is missing, throw.
-- In `Program.RunServeAsync`, before `bus.ConnectAsync`, call `LoadAllAsync` on both repositories and populate both boards. Then walk the restored tasks and re-run `SyncFromTask`; mark pending on `Advanced`.
+- In `Program.RunServeAsync`, before `bus.ConnectAsync`, call `LoadAllAsync` on both repositories and populate both boards. Then walk the restored tasks; for each in-flight one (`InProgress`, `Done`, `Failed`) call `outbox.MarkPending`.
 - Add `IWmsOrderRepository` to `FleetCore` with the same four methods as `IFleetTaskRepository`. Implement it in `FleetManager` with a `wms_orders` table.
 
 ## Tier 3 — near-solution
@@ -39,14 +39,10 @@
   ```
 - Re-marking in `Program`:
   ```csharp
-  foreach (var task in taskBoard ... ) // restored tasks
+  foreach (var task in restoredTasks)
   {
       if (task.State is TaskState.InProgress or TaskState.Done or TaskState.Failed)
-      {
-          var outcome = board.SyncFromTask(task.TaskId);
-          if (outcome == OrderSyncOutcome.Advanced)
-              outbox.MarkPending(task.TaskId);
-      }
+          outbox.MarkPending(task.TaskId);
   }
   ```
 - The dispatcher's transaction (sketch):

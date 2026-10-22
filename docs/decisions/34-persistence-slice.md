@@ -51,12 +51,12 @@ Reasons:
 
 ## 5. Decision D: re-mark the words the WMS is owed
 
-**Decision D.** After restoring, for every task that is `InProgress`, `Done` or `Failed`, mark its order id pending in the outbox — **if the order's word is above `received`**. An `Assigned` or `Queued` task owes nothing: the WMS already heard `received` at intake.
+**Decision D.** After restoring, for every task that is `InProgress`, `Done` or `Failed`, call `outbox.MarkPending(taskId)`. An `Assigned` or `Queued` task marks nothing.
 
 Reasons:
-1. **The pile stores ids, the sender reads the word at send time (record 31 §6).** So re-marking is just `outbox.MarkPending(orderId)` for the owed ones. The sender will read the current word when it finally pushes.
-2. **Only the ladder knows the answer.** `WmsOrderLadder.ForTask(taskState)` maps a task state to an order word; `SyncFromTask` compares it with the word the order already has. After a restore the order's word is already correct (it was saved), so `Advanced` means "owed", `AlreadyThere` means "not owed". Re-running `SyncFromTask` per restored task is the safe way to decide.
-3. **A word that was already pushed and acked stays pushed.** The outbox was cleared when the push succeeded. After a restart the outbox is empty, so a task that finished and was pushed before the crash owes nothing. Only in-flight words come back.
+1. **The outbox was in memory and is empty after a restart.** We cannot know which words were already pushed, so the safe reconstruction is: every in-flight task owes at least one word. Re-pushing is harmless because the sender reads the current word at send time (record 31 §6) and the WMS handles a repeated word.
+2. **Filtering by task state is the right cut.** `InProgress`, `Done` and `Failed` are the states in which the WMS has not yet heard a final word it can act on. `Queued` and `Assigned` mean the WMS already heard `received` at intake.
+3. **No special-case code.** Marking pending is one call per in-flight task; no guessing about push history.
 
 Rejected: re-marking every task. That would re-push `received`, which the WMS already got at intake, and would make a restart noisy.
 
