@@ -1,6 +1,6 @@
 # Build report: Lesson 25 — The persistence slice
 
-Owner sign-off:
+Owner sign-off: Jamie
 
 ## Summary
 
