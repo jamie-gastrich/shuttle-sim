@@ -1,6 +1,7 @@
 ---
 description: Teaches one fleet-software concept at a time in a lecture style (plain words, real code, worked example, shuttle assignment) for the pallet shuttle fleet sim project
 mode: all
+model: opencode/big-pickle
 tools:
   write: true
   edit: true

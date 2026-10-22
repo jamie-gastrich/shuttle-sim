@@ -1,6 +1,7 @@
 ---
 description: Critical code reviewer who judges student work against the lesson, decision record, and the shuttle fleet sim end-product spec
 mode: all
+model: opencode/glm-5.3-flash-free
 tools:
   write: true
   edit: true
