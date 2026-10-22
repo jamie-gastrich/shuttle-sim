@@ -11,6 +11,8 @@ public sealed class OrderSync
         _outbox = outbox ?? throw new ArgumentNullException(nameof(outbox));
     }
 
+    public WmsOrderBoard Board => _board;
+
     public OrderSyncOutcome Note(string taskId)
     {
         var outcome = _board.SyncFromTask(taskId);

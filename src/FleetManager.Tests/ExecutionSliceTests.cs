@@ -71,4 +71,45 @@ public sealed class ExecutionSliceTests
         Assert.Equal("ORD-1", document.RootElement.GetProperty("orderId").GetString());
         Assert.Equal(0, outbox.PendingCount);
     }
+
+    [Fact]
+    public void Restoring_an_in_progress_task_remarks_its_word()
+    {
+        var tasks = new TaskBoard();
+        var board = new WmsOrderBoard(tasks);
+        var outbox = new WmsStatusOutbox();
+        var orderSync = new OrderSync(board, outbox);
+        var submit = board.Submit(
+            new SubmitOrderRequest("ORD-1", WmsOrderKinds.Store, "PAL-1", "A01-L07"), Start);
+        var task = submit.CreatedTask!;
+        task.Assign("SH-01", Start);
+        task.Start(Start);
+        orderSync.Note(task.TaskId);
+        Assert.Equal(1, outbox.PendingCount);
+
+        // Simulate a restart: rebuild both boards from saved state.
+        var savedTask = task;
+        var savedOrder = board.TryGet("ORD-1", out var o) ? o! : throw new InvalidOperationException("missing order");
+
+        var tasks2 = new TaskBoard();
+        tasks2.Add(savedTask);
+        var board2 = new WmsOrderBoard(tasks2);
+        board2.Load(savedOrder);
+        var outbox2 = new WmsStatusOutbox();
+
+        // A queued task owes nothing.
+        var queuedSubmit = board2.Submit(
+            new SubmitOrderRequest("ORD-2", WmsOrderKinds.Store, "PAL-2", "A01-L08"), Start);
+        // leave ORD-2 queued (no move)
+
+        // Re-mark in-flight words.
+        foreach (var t in new[] { savedTask })
+        {
+            if (t.State is TaskState.InProgress or TaskState.Done or TaskState.Failed)
+                outbox2.MarkPending(t.TaskId);
+        }
+
+        Assert.Equal(1, outbox2.PendingCount);
+        Assert.Contains("ORD-1", outbox2.Claim());
+    }
 }

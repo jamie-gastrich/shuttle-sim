@@ -167,6 +167,11 @@ async Task<int> RunServeAsync()
 	var tickIntervalMs = configuration.GetValue<int>("FleetManager:TaskExecutionIntervalMs");
 	if (tickIntervalMs < 1)
 		throw new InvalidOperationException("FleetManager:TaskExecutionIntervalMs must be positive.");
+	var connectionString = configuration.GetValue<string>("FleetManager:PostgresConnectionString");
+	if (string.IsNullOrWhiteSpace(connectionString))
+		connectionString = Environment.GetEnvironmentVariable("SHUTTLE_DB_CONNECTION_STRING");
+	if (string.IsNullOrWhiteSpace(connectionString))
+		throw new InvalidOperationException("FleetManager:PostgresConnectionString must be set.");
 	var ackTimeoutMs = configuration.GetValue<int>("FleetManager:AckTimeoutMs");
 	if (ackTimeoutMs < 1)
 		throw new InvalidOperationException("FleetManager:AckTimeoutMs must be positive.");
@@ -188,8 +193,27 @@ async Task<int> RunServeAsync()
 	var board = new WmsOrderBoard(taskBoard);
 	var outbox = new WmsStatusOutbox();
 	var orderSync = new OrderSync(board, outbox);
-	var repository = new InMemoryFleetTaskRepository();
-	var dispatcher = new TaskDispatcher(taskBoard, repository, orderSync);
+	var taskRepository = new PostgresFleetTaskRepository(connectionString!);
+	var orderRepository = new PostgresWmsOrderRepository(connectionString!);
+
+	// Restore before the bus connects, so the first tick sees a full fleet manager.
+	var restoredTasks = await taskRepository.LoadAllAsync(CancellationToken.None);
+	foreach (var restoredTask in restoredTasks)
+		taskBoard.Add(restoredTask);
+	var restoredOrders = await orderRepository.LoadAllAsync(CancellationToken.None);
+	foreach (var restoredOrder in restoredOrders)
+		board.Load(restoredOrder);
+
+	// Re-mark the words the WMS is still owed. The outbox was in memory and is
+	// empty after a restart, so every in-flight task owes at least one word.
+	// The sender reads the current word at send time, so re-pushing is safe.
+	foreach (var restoredTask in restoredTasks)
+	{
+		if (restoredTask.State is TaskState.InProgress or TaskState.Done or TaskState.Failed)
+			outbox.MarkPending(restoredTask.TaskId);
+	}
+
+	var dispatcher = new TaskDispatcher(taskBoard, taskRepository, orderSync, orderRepository, connectionString);
 	var registry = new ShuttleRegistry();
 	var retry = new RetryPolicyExtensions.RetryPolicy(
 		maxAttempts, TimeSpan.FromMilliseconds(ackTimeoutMs), TimeSpan.FromMilliseconds(backoffMs));

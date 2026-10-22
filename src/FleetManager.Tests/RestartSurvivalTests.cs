@@ -67,4 +67,46 @@ public class RestartSurvivalTests
         Assert.Equal("task-queued-a", boardAfterRestart.NextQueued()!.TaskId);
         Assert.Equal("task-queued-b", boardAfterRestart.Get("task-queued-b").TaskId);
     }
+
+    [Fact]
+    public async Task Orders_survive_a_restart_alongside_tasks()
+    {
+        var cancellationToken = CancellationToken.None;
+        var connectionString = TestDatabase.BuildConnectionString();
+        var taskRepository = new PostgresFleetTaskRepository(connectionString);
+        var orderRepository = new PostgresWmsOrderRepository(connectionString);
+        await TestDatabase.ResetAsync(taskRepository, cancellationToken);
+
+        await using (var connection = new Npgsql.NpgsqlConnection(connectionString))
+        {
+            await connection.OpenAsync(cancellationToken);
+            await using var command = new Npgsql.NpgsqlCommand("DELETE FROM wms_orders", connection);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        var start = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        var task = new FleetTask("ORD-1", "A01-L07", start);
+        task.Assign("SH-01", start.AddSeconds(1));
+        task.Start(start.AddSeconds(2));
+
+        var order = new WmsOrder("ORD-1", WmsOrderKinds.Store, "PAL-1", "A01-L07", WmsOrderStates.InProgress, start);
+
+        await taskRepository.SaveAsync(task, cancellationToken);
+        await orderRepository.SaveAsync(order, cancellationToken);
+
+        // Reload both, as serve does on start.
+        var reloadedTasks = (await taskRepository.LoadAllAsync(cancellationToken)).ToList();
+        var reloadedOrders = (await orderRepository.LoadAllAsync(cancellationToken)).ToList();
+
+        var taskBoard = new TaskBoard();
+        foreach (var t in reloadedTasks) taskBoard.Add(t);
+        var orderBoard = new WmsOrderBoard(taskBoard);
+        foreach (var o in reloadedOrders) orderBoard.Load(o);
+
+        Assert.Equal(1, taskBoard.Count);
+        Assert.True(orderBoard.TryGet("ORD-1", out var restoredOrder));
+        Assert.Equal(WmsOrderStates.InProgress, restoredOrder!.State);
+        Assert.Equal(TaskState.InProgress, taskBoard.Get("ORD-1").State);
+    }
 }

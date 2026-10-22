@@ -40,6 +40,17 @@ public sealed class WmsOrderBoard
             return _orders.TryGetValue(orderId, out order);
     }
 
+    public void Load(WmsOrder order)
+    {
+        ArgumentNullException.ThrowIfNull(order);
+        lock (_gate)
+        {
+            if (_orders.ContainsKey(order.OrderId))
+                throw new InvalidOperationException($"duplicate order id {order.OrderId}");
+            _orders.Add(order.OrderId, order);
+        }
+    }
+
     private static FleetTask CreateTask(WmsOrder order)
         => new(order.OrderId, order.LaneId, order.ReceivedAt);
 
