@@ -172,10 +172,15 @@ public sealed class WmsStatusPusher
         //   var ids = _outbox.Claim();
         //   foreach (var orderId in ids)
         //   {
-        //       if (!_board.TryGet(orderId, out var order))
+        //       if (!_board.TryGet(orderId, out var order) || order is null)
         //       {
         //           // TODO: one log line (Console.WriteLine) saying the id has no order.
         //           //       No MarkPending here. A ghost id would loop forever.
+        //           //
+        //           // TRAP: the second clause is not decoration. TryGet's signature
+        //           // does not promise "true means not null", so without it every
+        //           // order.OrderId below is a CS8602 warning. Decision record 32
+        //           // moves the promise onto the signature itself later.
         //           continue;
         //       }
         //
@@ -486,9 +491,11 @@ All three push tests set up the same world. Do it once, in a helper method in th
 
 ```bash
 cd src
-dotnet build
+dotnet build --no-incremental
 dotnet test ShuttleFleet.slnx -v m --filter "Category!=Integration"
 ```
+
+`--no-incremental` matters: in a warm workspace a plain `dotnet build` recompiles nothing, so it reports zero warnings without proving anything. Review 23 found four real `CS8602` warnings hiding behind a warm build.
 
 The baseline is 169 pure facts. With your seven new facts you land at 176 (or higher), `Failed: 0`.
 

@@ -285,7 +285,7 @@ public async Task SendPendingAsync(CancellationToken cancellationToken)
 {
     foreach (var orderId in _outbox.Claim())
     {
-        if (!_board.TryGet(orderId, out var order))
+        if (!_board.TryGet(orderId, out var order) || order is null)
         {
             Console.WriteLine($"status push: {orderId} has no order, dropped");
             continue;                       // do not requeue: a phantom id would loop forever
@@ -320,6 +320,7 @@ public async Task SendPendingAsync(CancellationToken cancellationToken)
 
 Every branch above rests on a measurement from today, so none of it is folklore:
 
+- **The guard has two clauses, and the second one is there for the compiler.** `WmsOrderBoard.TryGet` is declared `public bool TryGet(string orderId, out WmsOrder? order)`. The board never hands back a null order when it says `true` (measured: `TryGet(present) -> True, order is null? False`), but the *signature* does not say so, so the compiler cannot see it. Without the `|| order is null` clause, every `order.OrderId` below is a `CS8602` warning. [Decision record 32](../decisions/32-order-status-nullability-contract.md) decides where that promise belongs for good: on the signature itself, as `[NotNullWhen(true)]`. Until that lands, the widened guard is the correct shape to write — copy it exactly.
 - **A rejected reply does not throw.** `PostAsync` hands you the response; you check it yourself. Measured: a listener answering `500` produced `500 reply: NO THROW, status=500 after 58 ms`. That is why the `IsSuccessStatusCode` branch exists at all — miss it and a `5xx` looks like success.
 - **A dead WMS fails fast and typed.** Nothing listening on the port: `HttpRequestException after 5 ms; inner=SocketException`. One catch, requeue, move on.
 - **A slow WMS trips the client's own timeout.** A listener that sleeps 3 s against a 500 ms client: `TaskCanceledException after 520 ms; inner=TimeoutException`. And `TaskCanceledException` derives from `OperationCanceledException` — measured: `base of TaskCanceledException = OperationCanceledException`. So one catch covers it.
@@ -700,8 +701,9 @@ Build the sending half of the order-status loop, per [record 31](../decisions/31
 ### Acceptance criteria
 
 ```bash
-# 1. clean build, no warnings
-cd src && dotnet build
+# 1. clean build, no warnings. --no-incremental, so this is not a no-op
+#    in a warm workspace: it rebuilds everything and really counts the warnings.
+cd src && dotnet build --no-incremental
 
 # 2. the pure suite is green. Baseline at HEAD is 169;
 #    with your seven new facts you land at 176 (or higher), Failed: 0.

@@ -1,11 +1,217 @@
 # Review 23 — Lesson 23: status push
 
 **Reviewer:** Reviewer agent
-**Commit under review:** `a90b3f7` ("M6: Lesson 23 First Attempt") · **Lesson material:** `f0c7a2a` ("M6: Lesson 23") and `b45d76d` ("M6: Lesson 23 Update", hints only)
+**Commits under review:** `a90b3f7` ("M6: Lesson 23 First Attempt") and its fix `cee9694` ("M6: Lesson 23 corrections") · **Lesson material:** `f0c7a2a` ("M6: Lesson 23") and `b45d76d` ("M6: Lesson 23 Update", hints only)
 **Lesson:** [23-status-push.md](../lessons/23-status-push.md) · **Decision:** [record 31](../decisions/31-status-push.md)
-**Verdict:** **not yet** — one blocker: the committed source does **not** build warning-free (4 × `CS8602` in `src/FleetManager/WmsStatusPusher.cs`). Everything else in the slice is green: **33/33 acceptance greps, 176/176 tests, 7/7 named facts, 5/5 "must go red" mutations killed, 2/2 "may survive" mutations survived as predicted.**
+**Verdict:** **pass** (after the fix commit `cee9694`) — the one blocker is fixed and the fix is behaviour-neutral. Cold build of the committed tree: **0 Warning(s), 0 Error(s)**. **176/176** pure tests, **33/33** acceptance greps, **7/7** named facts, **6/6** "must go red" mutations still die.
+**The first-round verdict was _not yet_** (one blocker: 4 × `CS8602` in `src/FleetManager/WmsStatusPusher.cs`). The original review is preserved unchanged below; the **[follow-up section](#follow-up-review--fix-commit-cee9694-parent-a90b3f7)** records the fix verification.
 
 ---
+
+## Follow-up review — fix commit `cee9694` (parent `a90b3f7`)
+
+**Verdict: pass.** The blocker is genuinely fixed, the fix is behaviour-neutral, and nothing else in the slice regressed. M6 stays `in progress` — this is one lesson, not the milestone.
+
+**What the fix commit changed.** `git diff --name-only a90b3f7..cee9694` names three files: `docs/reviews/23-status-push.md` (this review, added by the owner), `src/FleetManager/WmsStatusPusher.cs`, and `src/FleetManager.Tests/WmsStatusPusherTests.cs`. **No other `src/` file moved.** The whitespace-ignoring diff of the two source files shows exactly four semantic edits and nothing else:
+
+| File | Semantic change |
+|---|---|
+| `src/FleetManager/WmsStatusPusher.cs` | the guard widened to `if (!_board.TryGet(orderId, out var order) \|\| order is null)` — the blocker fix |
+| | the rejected log line gained the status code: `rejected with {(int)response.StatusCode} {orderId} {order.State}` — issue 2 |
+| | indentation normalised to the 4-space house through `SendPendingAsync` and `RunAsync`, `if (` given its space, trailing whitespace dropped, final newline added — issue 3 |
+| `src/FleetManager.Tests/WmsStatusPusherTests.cs` | `namespace FleetManager.Tests;` added; the now-redundant `using FleetManager;` removed (the enclosing namespace resolves `WmsStatusPusher` — the build is clean, so the removal is safe) — issue 4 |
+
+### 1. Cold build — the blocker, re-checked the way it hid last time
+
+The first-round blocker was masked by a warm `bin/`/`obj/`: `dotnet build` in this workspace recompiles nothing, so it reported 0 warnings without proving anything. The fix was therefore checked against a **fresh copy of the committed tree with every `bin/` and `obj/` deleted**, never the workspace:
+
+```bash
+rm -rf /tmp/opencode/l23fix
+mkdir -p /tmp/opencode/l23fix
+git archive cee9694 src | tar -x -C /tmp/opencode/l23fix     # 0 bin/obj directories in the copy
+cd /tmp/opencode/l23fix/src && dotnet build
+```
+
+Exact output:
+
+```
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:22.30
+```
+
+Exit code 0. **The four `CS8602` warnings are gone.** A second, independent cold pass — `dotnet build --no-incremental` in the same clean copy — reports the same:
+
+```
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:20.07
+```
+
+The workspace build (`cd src && dotnet build`) also reports `0 Warning(s) / 0 Error(s)`. **Blocker 1: FIXED** — the tree is back on the repo's warning-free gate that reviews 21, 22 and the baseline at `f0c7a2a` all held.
+
+### 2. The pure suite
+
+```bash
+cd src && dotnet test ShuttleFleet.slnx -v m --filter "Category!=Integration"
+```
+
+Exit code 0 — **Failed: 0, Passed: 176, Skipped: 0, Total: 176**. The total is unchanged from the first round, so the fix moved no test.
+
+| Project | Passed | First round |
+|---|---|---|
+| FleetCore.Tests | 49 | 49 |
+| FleetManager.Tests | 59 | 59 |
+| ShuttleCore.Tests | 31 | 31 |
+| Contracts.Tests | 8 | 8 |
+| TrafficCore.Tests | 6 | 6 |
+| Messaging.Tests | 10 | 10 |
+| MqttMessaging.Tests | 3 | 3 |
+| ShuttleSim.Tests | 10 | 10 |
+| **Total** | **176** | **176** |
+
+### 3. Diff scope — confirmed
+
+- `git diff --name-only a90b3f7..cee9694 -- src/` → `src/FleetManager.Tests/WmsStatusPusherTests.cs`, `src/FleetManager/WmsStatusPusher.cs`. **Two files, both named in the assignment.** Nothing else under `src/` moved.
+- `git diff -w a90b3f7..cee9694 -- src/…` (whitespace ignored) → the four semantic edits in the table above, and nothing else. The indentation churn is cosmetic, and the `-w` diff proves it is *only* cosmetic.
+- The two files the fix did **not** touch but could have — `src/FleetCore/WmsOrderBoard.cs` (where the "right" fix, `[NotNullWhen(true)]`, belongs) and `src/FleetCore/WmsStatusOutbox.cs` — are byte-identical to the first round. The do-not-touch list held.
+
+### 4. The guard edit does not change behaviour — proved, not assumed
+
+The widened guard `if (!_board.TryGet(orderId, out var order) || order is null)` adds a clause that can only fire when `TryGet` returns `true` **and** hands back a null order. Two independent checks say that cannot happen:
+
+1. **Direct probe** against the real board (`/tmp/opencode/l23probe3`, scratch, since deleted):
+
+   ```text
+   TryGet(present) -> True, order is null? False
+   TryGet(absent)  -> False, order is null? True
+   ```
+
+   `WmsOrderBoard.TryGet` is `Dictionary<string, WmsOrder>.TryGetValue` under a lock, and the dictionary only ever holds a constructed `WmsOrder` — so `true ⇒ non-null`, and the guard's new clause is unreachable.
+
+2. **Instrumented build** (`/tmp/opencode/mut_guard`, scratch, since deleted): the guard was rewritten to *throw* if `order` is ever null on a `true` return, and the whole suite was run. Exit code 0, **176/176 passed, the probe never fired.**
+
+3. **The named facts, run one by one** — the three pusher facts and the four new facts all pass:
+
+   | Fact | Project | Result |
+   |---|---|---|
+   | `Push_posts_the_current_word_to_the_status_route` | FleetManager.Tests | Passed (1/1) |
+   | `Push_failure_keeps_the_order_pending_for_the_next_pass` | FleetManager.Tests | Passed (1/1) |
+   | `Push_timeout_keeps_the_order_pending_and_does_not_escape` | FleetManager.Tests | Passed (1/1) |
+   | `Order_status_route_is_pinned` | FleetCore.Tests | Passed (1/1) |
+   | `NoteSync_Advanced_marks_the_order_pending` | FleetCore.Tests | Passed (1/1) |
+   | `NoteSync_of_AlreadyThere_and_NoOrder_mark_nothing` | FleetCore.Tests | Passed (1/1) |
+   | `NoteSync_twice_marks_once` | FleetCore.Tests | Passed (1/1) |
+
+### 5. Acceptance greps — re-verified after the fix commit
+
+All **33** lesson-23 greps (sections 3–9), rebased onto `f0c7a2a` exactly as the lesson instructs: **33 PASS / 0 FAIL.** The three the fix commit could most plausibly have disturbed:
+
+| Check | Result |
+|---|---|
+| 6.7 `! grep -qE "https?://" src/FleetManager/WmsStatusPusher.cs` (no URL in the pusher) | **PASS** — the new log line interpolates an `int` status code, not a URL |
+| 5.4 `! grep -qE "HttpClient\|HttpRequest\|Results\|HttpContext" src/FleetCore/WmsStatusOutbox.cs` (FleetCore purity) | **PASS** — the outbox was not touched at all |
+| 7.6 `test -z "$(git diff f0c7a2a -- src/FleetManager/Program.cs \| grep -E '^-[^-]')"` (no deletions in `Program.cs`) | **PASS** — `Program.cs` did not move |
+| 8.1 the nine do-not-touch types diff empty | **PASS** |
+
+Full list unchanged from the first round: 3.1–3.6, 4.1–4.2, 5.1–5.4, 6.1–6.7, 7.1–7.6, 8.1, 9.1–9.7 — all PASS.
+
+### 6. Mutations re-run — no "must go red" mutation survived the fix
+
+All six checks re-run in scratch copies under `/tmp/opencode` (workspace untouched):
+
+| # | Mutation | Result |
+|---|---|---|
+| a | `NoteSync`: drop the `== Advanced` check | **KILLED** — `NoteSync_of_AlreadyThere_and_NoOrder_mark_nothing` fails |
+| b | drop `MarkPending` from the three failure paths | **KILLED** — `Push_failure_…` **and** `Push_timeout_…` fail (2 failed) |
+| c | remove the `OperationCanceledException` catch | **KILLED** — `Push_timeout_…` fails |
+| d1 | serialize with default (PascalCase) options | **KILLED** — `Push_posts_…` fails on `GetProperty("state")` |
+| d2 | POST to `WmsRoutes.Orders` instead | **KILLED** — `Push_posts_…` fails on the path assert |
+| e | `Claim` returns the copy without clearing | **KILLED** — `NoteSync_Advanced_marks_the_order_pending` fails |
+
+The fix did not weaken a single fact.
+
+### 7. Cleanliness
+
+- `pgrep -af "dotnet run\|FleetManager.dll\|ShuttleSim.dll\|mosquitto\|postgres"` → nothing but the reviewer's own command line. `docker compose -f docker/compose.yml ps` → **no containers running**; nothing was started (the pure suite needs no broker or database).
+- Scratch under `/tmp/opencode` (`l23fix`, `l23probe3`, `mut_a`…`mut_g`, `mut_guard`, and the captured output file) — **all deleted** after the run.
+- `git status --porcelain` → **clean** apart from this review file. Nothing under `src/` was edited by the reviewer.
+
+### Issue status after the fix
+
+| # | Issue | Severity | Status | Attribution |
+|---|---|---|---|---|
+| 1 | 4 × `CS8602` in `WmsStatusPusher.cs` | **blocker** | **FIXED** | Owner. Guard widened inside the one file the lesson allows. Verified cold: 0/0. |
+| 2 | "rejected" log dropped the reason | should-fix | **FIXED** | Owner. `rejected with {(int)response.StatusCode} {orderId} {order.State}` — id, word and reason on one line. |
+| 3 | mixed indentation (three widths) | should-fix | **FIXED** | Owner. 4-space house through both methods, `if (` spaced, trailing whitespace dropped, final newline added. |
+| 4 | test file had no namespace | should-fix | **FIXED** | Owner. `namespace FleetManager.Tests;` added; `using FleetManager;` correctly dropped. |
+| 5 | uncaught exception in a pass kills the fleet manager and loses the claimed word | consider | **DEFERRED** | Not the owner's to fix: record 31 §8 pins exactly three failure shapes and the owner implemented them faithfully. Belongs to the **professor** (tighten the `Wms:BaseUrl` scheme check, and decide the loop's exception policy) before the execution slice arms it. Still dormant — nothing calls `NoteSync` in production. |
+| 6 | "newest truth wins" is a convention, not a pinned fact | consider | **DEFERRED** | Belongs to the **execution slice** (one fact: mark `in_progress`, mark `done`, then send — the WMS must see one POST carrying `done`). |
+| 7 | evidence gaps and small notes | consider | **PARTLY FIXED** | Fixed by this commit: the pusher's final newline and trailing whitespace. Still open, all cosmetic and none of them blocking: `WmsStatusOutbox.cs`, `WmsStatusOutboxTests.cs` and `WmsStatusPusherTests.cs` still end without a final newline; one whitespace-only line at `WmsStatusPusherTests.cs:38`; the blank line before each closing brace in `WmsStatusOutbox.cs:20-21, 31-32`; the three push tests still repeat the same twelve-line world setup instead of using one helper; and the five pusher log lines still carry no `status push: ` prefix, which is what the lesson's own shape shows. |
+| — | **Lesson defect** (the professor's skeleton and hints §3.2 have the same `CS8602` hole) | — | **OPEN — for the professor** | See below. Not a student failure. |
+
+### Lesson defect — the same hole is in the teaching material, and it should be corrected before the next slice
+
+This is the one thing I would not leave unrecorded. The owner did **not** invent the nullable problem:
+
+- The lesson's own `SendPendingAsync` shape (lesson lines 284–318) writes `if (!_board.TryGet(orderId, out var order)) { …; continue; }` and then dereferences `order.OrderId` / `order.State` — against the same `public bool TryGet(string orderId, out WmsOrder? order)` signature, which carries no `[NotNullWhen(true)]`.
+- Hints §3.2 repeats it verbatim in the near-solution skeleton (hints lines 175–201).
+- Record 31 §12 even measured the related idiom (`Assert.NotNull` carries `[NotNull]`, scratch `l23notnull`) — but never mentioned the `TryGet` out-parameter attribute.
+
+A student who transcribes the lesson exactly gets four warnings and then has to find a way around a file they are forbidden to touch. The owner found the right way around — widen the guard, inside the one file the lesson opens — but that is a workaround for a hole in the material, not a lesson in itself.
+
+**What I recommend (the professor's call, in the professor's files):**
+
+1. **Fix the lesson skeleton and hints §3.2** to show the null-safe form — either `if (!_board.TryGet(orderId, out var order) || order is null)` or, better, the shape that shows the *contract* rather than the workaround: copy the two values you need into non-nullable locals (`var orderId = order.OrderId; var state = order.State;`) right after the guard.
+2. **Decide, in a decision record (append-only — a new record, not an edit of 31), where the nullability contract of `WmsOrderBoard.TryGet` lives.** The right long-term home is `[NotNullWhen(true)]` on the out parameter, but `src/FleetCore/WmsOrderBoard.cs` is on lesson 23's do-not-touch list, so it has to be a later slice that opens that file. The record should say which slice owns it, so the next student is not handed the same trap.
+3. **Make the acceptance command honest.** Lesson 23's criterion #1 is `cd src && dotnet build`, which is a no-op in a warm workspace. Either `dotnet build --no-incremental` or `dotnet clean && dotnet build` should be the stated command, or the lesson should say "from a clean tree". This is the second lesson running where an incremental build hid a real defect.
+
+None of this is on the owner. It is a lesson defect, and it should be corrected before the next slice so the same trap is not set again.
+
+### What is solid (follow-up)
+
+- **The fix is minimal and exactly where the review said it belonged.** The guard was widened inside `WmsStatusPusher.cs` — the one file the lesson opens — and `WmsOrderBoard.cs` was left alone, which is the difference between respecting requirement 7 and quietly working around it.
+- **The fix was verified the right way.** The owner ran the acceptance command cold rather than trusting the warm workspace, after being told exactly why the warm build lies.
+- **The log line now carries the reason.** `rejected with 500 ORD-1 in_progress` tells a support engineer at 03:00 whether the WMS is unwell (5xx, wait) or has restarted and forgotten the order (404, intervene) — the exact split record 31 §8 names as the future permanent-rejection class.
+- **The indentation is now one width.** The method reads top to bottom at one step, which is what makes the block structure explainable out loud.
+- **The test file joined the project's namespace**, and `using FleetManager;` was removed only because the enclosing namespace now resolves it — a correct, minimal change with a clean build as proof.
+
+### Explain-it check (follow-up round)
+
+Answer these out loud, no notes. They are about the fix, not about the slice in general.
+
+1. **The nullable contract.** The compiler could not see that `order` is non-null after `TryGet` returns `true`, even though it always is. Explain why in words — what does the method's *signature* promise, and what would it have to promise for the compiler to know? Then say what the difference is between a `TryGet` that returns `bool` and one that returns `bool` with an annotated out parameter, and why the compiler's caution is the right default even when the code happens to be safe today.
+2. **The guard, and what it would cost if it could fire.** Your guard now reads `if (!_board.TryGet(orderId, out var order) || order is null)`. Say exactly what happens on each side of the `||`. Then: the clause is unreachable with today's board — say how you know that, and say what the pusher would do if the board *could* hand back a null order (log line, requeue or not, and why). Then say whether you would rather have the compiler tell you "this can be null" than have the runtime quietly agree with you.
+3. **The reason in the log.** Before this fix, the rejected line read `rejected ORD-1 in_progress`. Now it reads `rejected with 500 ORD-1 in_progress`. Name the one thing the status code tells a support engineer that the id and the word do not, and point at the sentence in the contract page *you* published that says what the fleet manager does about a rejected word. Then say what the contract promises about the retry, and what that promise costs the WMS.
+
+**Lines and blocks to study:**
+
+- `src/FleetManager/WmsStatusPusher.cs:27` — the widened guard. Why does the `||` clause read the way it does, and what would change if the board were opened up later to add `[NotNullWhen(true)]`? (the clause becomes dead code — and then it should be deleted, not left as decoration)
+- `src/FleetManager/WmsStatusPusher.cs:45` — the rejected line. Where do the id, the word and the reason sit, and why is the status code an `int` cast rather than the enum?
+- `src/FleetManager/WmsStatusPusher.cs:24-58` — the whole method at one indentation width. Compare it against `FleetServeLoop.cs:39-45` and `WmsOrderBoard.cs:12-39`: which neighbour did you copy, and does your block structure now match theirs?
+- `src/FleetManager.Tests/WmsStatusPusherTests.cs:1-5` — the namespace and the removed `using`. Why does `WmsStatusPusher` still resolve with no `using FleetManager;`? (name lookup walks out through the enclosing namespace) — and what would have happened if the class had been named `Tests`?
+- `src/FleetManager.Tests/WmsStatusPusherTests.cs:38` — the whitespace-only line. What is the house rule about a blank line inside a block?
+
+### Revisit list (follow-up)
+
+- **Nullable reference types are a contract, not a suggestion.** `[NotNullWhen(true)]` on a `TryGet` out parameter is the idiom that makes "returned true ⇒ not null" visible to the compiler. Look again at `WmsOrderBoard.TryGet` and see exactly what it does *not* say — and note that the professor's own lesson and hints have the same hole, so this is a shared gap, not a private mistake.
+- **A clean build is a gate, and an incremental build can hide it.** `dotnet build --no-incremental`, `dotnet clean`, and "a fresh copy with no `bin/`/`obj/`" are now three ways to check the same thing. Use one of them every time, not just when a review asks.
+- **The lesson-material check.** When a lesson shows a code shape, treat it as code: read it for the warning it will produce on your machine. The professor's shape is a lesson too, and it had a defect.
+- **The three-outcome log line.** id, word, reason. Now that one line carries all three, audit the other five `Console.WriteLine` sites in `FleetManager` against the same bar.
+
+### End-product check (follow-up)
+
+The fix does not move the slice forward or backward in the product; it makes it *honest*. What it buys is the thing a reviewer cares about most in an integration seam: the sender now fails loudly at build time rather than silently at 03:00, and the operator sees *why* a word was rejected, not just that it was. The structural risk flagged in the first-round end-product check is unchanged and still dormant — the pile has no production caller, so the uncaught-exception blast radius (issue 5) is still asleep, and it is still the thing the execution slice arms. The one thing this commit *does* change for the milestones ahead is the trust in the seam: the contract page, the pinned route, the camelCase body and the requeue-on-failure policy are now carried by code that compiles without a warning, which is what a WMS integration has to look like before the receiver and the dispatcher start talking to it.
+
+---
+
+# First-round review — commit `a90b3f7` (preserved unchanged)
+
+*Everything below is the original review, written against `a90b3f7` before the fix. It is kept verbatim so the record shows what was found, not only what was found fixed. Its verdict was **not yet**; the verdict above is the current one.*
 
 ## What was checked, and how
 
@@ -282,4 +488,11 @@ This slice builds the sending half of M6's "orders flow … and back": the pile 
 
 ## README
 
-**Not updated.** Two reasons, and the second one is the same as in review 22. First, the verdict is *not yet* — there is a blocker, and per AGENTS.md a milestone state changes only when the work passes. Second, and independently: the milestone table in `README.md` has **no per-lesson rows** (M0–M8 only), and M6's done-when — *"orders flow from the WMS to completed pallets and back, and a WMS outage or a bad order does not corrupt fleet state"* — is **not met**: nothing in `serve` moves a task yet, there is no receiver on `/api/order-status`, no cancel, and the door-hardening slice is still owed. So the M6 row correctly stays **`in progress`**, and nothing in `README.md` was touched. Verified with `git status --porcelain` (clean) after writing this file.
+**Not updated — and this is unchanged by the follow-up.** The verdict is now a **pass**, so the "no change on a failing review" reason no longer applies; the second reason does, and it is the same one as in review 22:
+
+- The milestone table in `README.md` has **no per-lesson rows** (M0–M8 only), so there is no M6/lesson-23 row to move, and no per-lesson "verified by" note to add. The `Verification notes` section below the table carries one note per **completed milestone** (M5, M4, M3, M2, M1, M0); M6 has no note because M6 is not done.
+- **M6's done-when is not met:** *"orders flow from the WMS to completed pallets and back, and a WMS outage or a bad order does not corrupt fleet state."* Nothing in `serve` moves a task yet, there is no receiver on `/api/order-status`, no cancel, and the door-hardening slice is still owed. The M6 row therefore correctly stays **`in progress`** — and per AGENTS.md a milestone is never marked done on a single lesson's pass.
+
+So `README.md` was left **byte-for-byte untouched**. Verified with `git status --porcelain` (only this review file modified) after writing it.
+
+*First-round note (kept for the record):* the same section said "not updated" for two reasons then — the `not yet` verdict, and the reasons above. The verdict reason is now gone; the other two still hold.
