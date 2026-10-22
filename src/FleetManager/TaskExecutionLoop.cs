@@ -14,7 +14,9 @@ public sealed class TaskExecutionLoop
     private readonly TimeSpan _interval;
     private readonly Func<DateTime> _clock;
     // The TaskBoard cannot answer "which task is this shuttle working on", so the
-    // tick keeps its own memory of the shuttles it has handed work to.
+    // tick keeps its own memory of the shuttles it has handed work to. Only the
+    // timer thread touches this dictionary today; if per-shuttle workers land
+    // (the stretch goal), guard it with a lock or pass it by message.
     private readonly Dictionary<string, FleetTask> _working = new(StringComparer.Ordinal);
 
     public TaskExecutionLoop(TaskDispatcher dispatcher, ShuttleRegistry registry, ICommandSender sender,

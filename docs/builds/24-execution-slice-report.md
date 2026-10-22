@@ -115,5 +115,8 @@ Mutation checks (run in scratch copies under `/tmp/opencode`, then removed):
 ## Stopped early
 
 None.
-filePath">
-/home/jamie/shuttle-sim/docs/builds/24-execution-slice-report.md
+
+## Fixes after review
+
+- `WmsStatusPusher.RunAsync` now wraps each pass in a try/catch so a pass-level failure is logged instead of killing the push loop (matches the tick's never-die rule).
+- Added a comment on `TaskExecutionLoop._working` noting single-threaded access today and the lock/message-passing requirement before per-shuttle workers land.

@@ -69,7 +69,18 @@ public sealed class WmsStatusPusher
 
         while (await timer.WaitForNextTickAsync(cancellationToken))
         {
-            await SendPendingAsync(cancellationToken);
+            try
+            {
+                await SendPendingAsync(cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"status push: pass failed {ex.GetType().Name} {ex.Message}");
+            }
         }
     }
 }
