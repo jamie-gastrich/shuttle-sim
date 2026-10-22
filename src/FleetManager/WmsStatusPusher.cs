@@ -55,6 +55,11 @@ public sealed class WmsStatusPusher
                 _outbox.MarkPending(order.OrderId);
                 Console.WriteLine($"timeout {orderId} {order.State}");
             }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _outbox.MarkPending(orderId);                                    // the truth is not given up on
+                Console.WriteLine($"status push: failed {orderId} {ex.GetType().Name}, will retry");
+            }
         }
     }
 

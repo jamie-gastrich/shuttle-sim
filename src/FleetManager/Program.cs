@@ -155,14 +155,27 @@ async Task<int> RunServeAsync()
 		throw new InvalidOperationException("Kestrel:Endpoints:Http:Url must be set.");
 	var wmsBaseUrl = configuration.GetValue<string>("Wms:BaseUrl")
 		?? throw new InvalidOperationException("Wms:BaseUrl is missing.");
-	if (!Uri.TryCreate(wmsBaseUrl, UriKind.Absolute, out var wmsUri))
-		throw new InvalidOperationException("Wms:BaseUrl must be an absolute URL.");
+	// Checked before the bus connects: a bad URL must stop serve at startup,
+	// not kill the process later when the pusher first tries to send.
+	var wmsUri = WmsEndpoint.Parse(wmsBaseUrl);
 	var wmsTimeoutMs = configuration.GetValue<int>("Wms:StatusTimeoutMs");
 	if (wmsTimeoutMs < 1)
 		throw new InvalidOperationException("Wms:StatusTimeoutMs must be positive.");
 	var wmsIntervalMs = configuration.GetValue<int>("Wms:StatusIntervalMs");
 	if (wmsIntervalMs < 1)
 		throw new InvalidOperationException("Wms:StatusIntervalMs must be positive.");
+	var tickIntervalMs = configuration.GetValue<int>("FleetManager:TaskExecutionIntervalMs");
+	if (tickIntervalMs < 1)
+		throw new InvalidOperationException("FleetManager:TaskExecutionIntervalMs must be positive.");
+	var ackTimeoutMs = configuration.GetValue<int>("FleetManager:AckTimeoutMs");
+	if (ackTimeoutMs < 1)
+		throw new InvalidOperationException("FleetManager:AckTimeoutMs must be positive.");
+	var maxAttempts = configuration.GetValue<int>("FleetManager:MaxAttempts");
+	if (maxAttempts < 1)
+		throw new InvalidOperationException("FleetManager:MaxAttempts must be positive.");
+	var backoffMs = configuration.GetValue<int>("FleetManager:BackoffMs");
+	if (backoffMs < 0)
+		throw new InvalidOperationException("FleetManager:BackoffMs must not be negative.");
 
 	var topics = new TopicScheme(messaging.TopicRoot);
 	var health = new ShuttleHealth(TimeSpan.FromMilliseconds(livenessMs));
@@ -173,16 +186,25 @@ async Task<int> RunServeAsync()
 		TimeSpan.FromMilliseconds(intervalMs), () => DateTime.UtcNow);
 	var taskBoard = new TaskBoard();
 	var board = new WmsOrderBoard(taskBoard);
-	
 	var outbox = new WmsStatusOutbox();
+	var orderSync = new OrderSync(board, outbox);
+	var repository = new InMemoryFleetTaskRepository();
+	var dispatcher = new TaskDispatcher(taskBoard, repository, orderSync);
+	var registry = new ShuttleRegistry();
+	var retry = new RetryPolicyExtensions.RetryPolicy(
+		maxAttempts, TimeSpan.FromMilliseconds(ackTimeoutMs), TimeSpan.FromMilliseconds(backoffMs));
+	var sender = new ReliableCommandSender(bus, topics, retry);
+	var execution = new TaskExecutionLoop(dispatcher, registry, sender, messaging.FleetManagerId,
+		TimeSpan.FromMilliseconds(tickIntervalMs), () => DateTime.UtcNow);
 	using var wmsClient = new HttpClient
 	{
 		BaseAddress = wmsUri,
 		Timeout = TimeSpan.FromMilliseconds(wmsTimeoutMs),
 	};
 	var pusher = new WmsStatusPusher(board, outbox, wmsClient, TimeSpan.FromMilliseconds(wmsIntervalMs));
-	
 
+	await bus.SubscribeAsync(topics.AllStatuses, MessageFamily.Status, execution.HandleStatusAsync, CancellationToken.None);
+	await bus.SubscribeAsync(topics.AllAcks, MessageFamily.Ack, sender.OnAckReceivedAsync, CancellationToken.None);
 	Console.WriteLine($"Fleet manager serving on {topics.AllStatuses}");
 	using var stopping = new CancellationTokenSource();
 	var stopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -194,6 +216,7 @@ async Task<int> RunServeAsync()
 	Console.CancelKeyPress += cancelHandler;
 	var loopTask = loop.RunAsync(stopping.Token);
 	var pushTask = pusher.RunAsync(stopping.Token);
+	var executionTask = execution.RunAsync(stopping.Token);
 	var webBuilder = WebApplication.CreateBuilder(new WebApplicationOptions
 	{
 		Args = args,
@@ -214,7 +237,6 @@ async Task<int> RunServeAsync()
 			_ => Results.Problem(statusCode: 409, title: "Order id already used"),
 		};
 	});
-
 	webApp.MapGet(WmsRoutes.Order("{orderId}"), (string orderId) =>
 		board.TryGet(orderId, out var order)
 			? Results.Ok(order)
@@ -237,6 +259,10 @@ async Task<int> RunServeAsync()
 	{
 		// Expected: the loop stopped because we cancelled it.
 	}
+	catch (Exception ex)
+	{
+		Console.WriteLine($"fleet manager: the serve loop stopped unexpectedly: {ex.Message}");
+	}
 	try
 	{
 		await pushTask;
@@ -245,6 +271,10 @@ async Task<int> RunServeAsync()
 	{
 		// Expected: the pushTask stopped because we cancelled it.
 	}
+	catch (Exception ex)
+	{
+		Console.WriteLine($"fleet manager: the status push loop stopped unexpectedly: {ex.Message}");
+	}
 	try
 	{
 		await webTask;
@@ -252,6 +282,22 @@ async Task<int> RunServeAsync()
 	catch (OperationCanceledException) when (stopping.IsCancellationRequested)
 	{
 		// Expected: the webTask stopped because we cancelled it.
+	}
+	catch (Exception ex)
+	{
+		Console.WriteLine($"fleet manager: the web host stopped unexpectedly: {ex.Message}");
+	}
+	try
+	{
+		await executionTask;
+	}
+	catch (OperationCanceledException) when (stopping.IsCancellationRequested)
+	{
+		// Expected: the tick stopped because we cancelled it.
+	}
+	catch (Exception ex)
+	{
+		Console.WriteLine($"fleet manager: the task execution loop stopped unexpectedly: {ex.Message}");
 	}
 	return 0;
 }

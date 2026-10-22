@@ -24,7 +24,8 @@ public class EndToEndTests
             board.Add(task);
         }
 
-        var dispatcher = new TaskDispatcher(board, repository);
+        var orderSync = new OrderSync(new WmsOrderBoard(board), new WmsStatusOutbox());
+        var dispatcher = new TaskDispatcher(board, repository, orderSync);
         var shuttleIds = new[] { "SH-01", "SH-02", "SH-03" };
         var now = start.AddHours(1);
         for (var index = 0; index < expectedTasks.Count; index++)

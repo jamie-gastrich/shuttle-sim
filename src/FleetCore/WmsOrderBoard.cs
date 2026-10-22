@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace FleetCore;
 
 public sealed class WmsOrderBoard
@@ -32,7 +34,7 @@ public sealed class WmsOrderBoard
         }
     }
 
-    public bool TryGet(string orderId, out WmsOrder? order)
+    public bool TryGet(string orderId, [NotNullWhen(true)] out WmsOrder? order)
     {
         lock (_gate)
             return _orders.TryGetValue(orderId, out order);

@@ -6,6 +6,9 @@ namespace FleetManager.Tests;
 
 public class RunLoopReassignmentTests
 {
+    private static TaskDispatcher NewDispatcher(TaskBoard board, IFleetTaskRepository repository) =>
+        new(board, repository, new OrderSync(new WmsOrderBoard(board), new WmsStatusOutbox()));
+
     [Fact]
     public async Task A_faulted_shuttle_requeues_its_task_and_another_shuttle_finishes_it()
     {
@@ -17,7 +20,7 @@ public class RunLoopReassignmentTests
         var occupancy = new OccupancyMap();
         var board = new TaskBoard();
         var repository = new InMemoryFleetTaskRepository();
-        var dispatcher = new TaskDispatcher(board, repository);
+        var dispatcher = NewDispatcher(board, repository);
         var gate = new RunLoopGate(occupancy, track, traffic);
         var timing = new ShuttleTiming(TimeSpan.FromSeconds(1), TimeSpan.Zero, TimeSpan.Zero);
         var start = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
@@ -64,7 +67,7 @@ public class RunLoopReassignmentTests
         var occupancy = new OccupancyMap();
         var board = new TaskBoard();
         var repository = new InMemoryFleetTaskRepository();
-        var dispatcher = new TaskDispatcher(board, repository);
+        var dispatcher = NewDispatcher(board, repository);
         var gate = new RunLoopGate(occupancy, track, traffic);
         var timing = new ShuttleTiming(TimeSpan.FromSeconds(1), TimeSpan.Zero, TimeSpan.Zero);
         var start = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
@@ -109,7 +112,7 @@ public class RunLoopReassignmentTests
         var occupancy = new OccupancyMap();
         var board = new TaskBoard();
         var repository = new InMemoryFleetTaskRepository();
-        var dispatcher = new TaskDispatcher(board, repository);
+        var dispatcher = NewDispatcher(board, repository);
         var gate = new RunLoopGate(occupancy, track, traffic);
         var timing = new ShuttleTiming(TimeSpan.FromSeconds(1), TimeSpan.Zero, TimeSpan.Zero);
         var start = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
@@ -154,7 +157,7 @@ public class RunLoopReassignmentTests
         var occupancy = new OccupancyMap();
         var board = new TaskBoard();
         var repository = new InMemoryFleetTaskRepository();
-        var dispatcher = new TaskDispatcher(board, repository);
+        var dispatcher = NewDispatcher(board, repository);
         var gate = new RunLoopGate(occupancy, track, traffic);
         var timing = new ShuttleTiming(TimeSpan.FromSeconds(1), TimeSpan.Zero, TimeSpan.Zero);
         var start = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);

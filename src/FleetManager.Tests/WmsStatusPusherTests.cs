@@ -4,6 +4,30 @@ using FleetCore;
 
 namespace FleetManager.Tests;
 
+internal sealed class ThrowsOnceHandler : HttpMessageHandler
+{
+    private bool _hasThrown;
+
+    public string? ThrownOrderId { get; private set; }
+    public List<string> Sent { get; } = new();
+
+    protected override async Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        var body = await request.Content!.ReadAsStringAsync(cancellationToken);
+        if (!_hasThrown)
+        {
+            _hasThrown = true;
+            using var document = JsonDocument.Parse(body);
+            ThrownOrderId = document.RootElement.GetProperty("orderId").GetString();
+            throw new InvalidOperationException("the WMS dropped this one");
+        }
+
+        Sent.Add(body);
+        return new HttpResponseMessage(HttpStatusCode.OK);
+    }
+}
+
 internal sealed class StubHandler : HttpMessageHandler
 {
     // --- what the stub was asked for ---
@@ -127,5 +151,34 @@ public class WmsStatusPusherTests
 
         await pusher.SendPendingAsync(CancellationToken.None);
         Assert.Equal(1, outbox.PendingCount);
+    }
+    
+
+    [Fact]
+    public async Task A_push_pass_that_throws_keeps_the_word_and_the_next_order()
+    {
+        // Arrange: two orders, both owed a word
+        var tasks = new TaskBoard();
+        var board = new WmsOrderBoard(tasks);
+        board.Submit(new SubmitOrderRequest("ORD-1", WmsOrderKinds.Store, "PLT-001", "A01-L01"), Start);
+        board.Submit(new SubmitOrderRequest("ORD-2", WmsOrderKinds.Store, "PLT-002", "A01-L02"), Start);
+        var outbox = new WmsStatusOutbox();
+        outbox.MarkPending("ORD-1");
+        outbox.MarkPending("ORD-2");
+
+        // Arrange: the first send throws, the second answers 200
+        var handler = new ThrowsOnceHandler();
+        using var client = new HttpClient(handler) { BaseAddress = new Uri("http://wms.test") };
+        var pusher = new WmsStatusPusher(board, outbox, client, TimeSpan.FromSeconds(1));
+
+        // Act
+        await pusher.SendPendingAsync(CancellationToken.None);
+
+        // Assert: the broken order is still owed, and the other one went out
+        Assert.Equal(1, outbox.PendingCount);
+        Assert.Equal(handler.ThrownOrderId, Assert.Single(outbox.Claim()));
+        Assert.Single(handler.Sent);
+        using var document = JsonDocument.Parse(handler.Sent[0]);
+        Assert.NotEqual(handler.ThrownOrderId, document.RootElement.GetProperty("orderId").GetString());
     }
 }

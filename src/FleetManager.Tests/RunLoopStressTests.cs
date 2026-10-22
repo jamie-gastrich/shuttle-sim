@@ -16,7 +16,8 @@ public class RunLoopStressTests
         var occupancy = new OccupancyMap();
         var board = new TaskBoard();
         var repository = new InMemoryFleetTaskRepository();
-        var dispatcher = new TaskDispatcher(board, repository);
+        var orderSync = new OrderSync(new WmsOrderBoard(board), new WmsStatusOutbox());
+        var dispatcher = new TaskDispatcher(board, repository, orderSync);
         var gate = new RunLoopGate(occupancy, track, traffic);
         var timing = new ShuttleTiming(TimeSpan.FromSeconds(1), TimeSpan.Zero, TimeSpan.Zero);
         var start = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);

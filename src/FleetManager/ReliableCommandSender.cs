@@ -10,7 +10,7 @@ public enum CommandSendStatus { Acknowledged, Rejected, NoAcknowledgement }
 public sealed record CommandSendResult(
     CommandSendStatus Status, int Attempts, CommandAckMessage? Acknowledgement);
 
-public sealed class ReliableCommandSender
+public sealed class ReliableCommandSender : ICommandSender
 {
     private readonly IMessageBus _bus;
     private readonly TopicScheme _topics;

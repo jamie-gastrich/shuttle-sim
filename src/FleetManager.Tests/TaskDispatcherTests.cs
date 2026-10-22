@@ -6,12 +6,15 @@ public class TaskDispatcherTests
 {
     private static readonly DateTime Start = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
+    private static TaskDispatcher NewDispatcher(TaskBoard board, IFleetTaskRepository repository) =>
+        new(board, repository, new OrderSync(new WmsOrderBoard(board), new WmsStatusOutbox()));
+
     [Fact]
     public async Task AssignNextAsync_assigns_the_oldest_queued_task_and_saves_it()
     {
         var board = new TaskBoard();
         var repository = new InMemoryFleetTaskRepository();
-        var dispatcher = new TaskDispatcher(board, repository);
+        var dispatcher = NewDispatcher(board, repository);
         var oldestTask = new FleetTask("task-oldest", "A01-L01", Start);
         var newerTask = new FleetTask("task-newer", "A01-L02", Start.AddSeconds(1));
         board.Add(oldestTask);
@@ -31,7 +34,7 @@ public class TaskDispatcherTests
     {
         var board = new TaskBoard();
         var repository = new InMemoryFleetTaskRepository();
-        var dispatcher = new TaskDispatcher(board, repository);
+        var dispatcher = NewDispatcher(board, repository);
 
         var task = await dispatcher.AssignNextAsync("SH-01", Start, CancellationToken.None);
 
@@ -44,7 +47,7 @@ public class TaskDispatcherTests
     {
         var board = new TaskBoard();
         var repository = new InMemoryFleetTaskRepository();
-        var dispatcher = new TaskDispatcher(board, repository);
+        var dispatcher = NewDispatcher(board, repository);
         var task = new FleetTask("task-1", "A01-L01", Start);
         board.Add(task);
         await dispatcher.AssignNextAsync("SH-01", Start.AddSeconds(1), CancellationToken.None);
@@ -62,7 +65,7 @@ public class TaskDispatcherTests
     {
         var board = new TaskBoard();
         var repository = new InMemoryFleetTaskRepository();
-        var dispatcher = new TaskDispatcher(board, repository);
+        var dispatcher = NewDispatcher(board, repository);
         var shuttleIds = new[] { "SH-01", "SH-02", "SH-03" };
         for (var index = 0; index < 6; index++)
             board.Add(new FleetTask($"task-{index + 1}", $"A01-L{index + 1:00}", Start.AddSeconds(index)));
@@ -110,7 +113,7 @@ public class TaskDispatcherTests
     {
         var board = new TaskBoard();
         var repository = new InMemoryFleetTaskRepository();
-        var dispatcher = new TaskDispatcher(board, repository);
+        var dispatcher = NewDispatcher(board, repository);
         var task = new FleetTask("task-1", "A01-L01", Start);
         board.Add(task);
 
@@ -128,7 +131,7 @@ public class TaskDispatcherTests
     {
         var board = new TaskBoard();
         var repository = new InMemoryFleetTaskRepository();
-        var dispatcher = new TaskDispatcher(board, repository);
+        var dispatcher = NewDispatcher(board, repository);
         var task = new FleetTask("task-1", "A01-L01", Start);
         board.Add(task);
         await dispatcher.AssignNextAsync("SH-01", Start.AddSeconds(1), CancellationToken.None);
@@ -146,7 +149,7 @@ public class TaskDispatcherTests
     {
         var board = new TaskBoard();
         var repository = new InMemoryFleetTaskRepository();
-        var dispatcher = new TaskDispatcher(board, repository);
+        var dispatcher = NewDispatcher(board, repository);
         var task = new FleetTask("task-1", "A01-L01", Start);
         board.Add(task);
 

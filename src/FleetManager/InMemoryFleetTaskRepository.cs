@@ -1,6 +1,6 @@
 using FleetCore;
 
-namespace FleetManager.Tests;
+namespace FleetManager;
 
 public class InMemoryFleetTaskRepository : IFleetTaskRepository
 {
