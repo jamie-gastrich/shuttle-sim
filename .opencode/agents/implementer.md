@@ -1,7 +1,6 @@
 ---
 description: Builds each lesson's assignment for the shuttle fleet sim, verifies it with real commands, and writes a build report so the owner can review and explain it
 mode: subagent
-model: opencode/deepseek-v4.1-flash-free
 tools:
   write: true
   edit: true
