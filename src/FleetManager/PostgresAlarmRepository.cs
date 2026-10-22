@@ -29,7 +29,7 @@ public sealed class PostgresAlarmRepository
         command.Parameters.AddWithValue("@code", alarm.Code);
         command.Parameters.AddWithValue("@severity", alarm.Severity);
         command.Parameters.AddWithValue("@raisedAt", alarm.RaisedAt);
-        command.Parameters.AddWithValue("@acknowledgedAt", (object?)alarm.AcknowledgedAt ?? DBNull.Value);
+        command.Parameters.AddWithValue("@acknowledgedAt", alarm.AcknowledgedAt.HasValue ? (object)alarm.AcknowledgedAt.Value : DBNull.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -82,7 +82,7 @@ public sealed class PostgresAlarmRepository
         var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT COUNT(*) FROM alarms WHERE shuttle_id = @shuttleId AND acknowledged_at IS NULL";
         cmd.Parameters.AddWithValue("@shuttleId", shuttleId);
-        return (int)(await cmd.ExecuteScalarAsync(cancellationToken));
+        return (int)(await cmd.ExecuteScalarAsync(cancellationToken) ?? 0);
     }
 
     public async Task AcknowledgeAsync(string shuttleId, CancellationToken cancellationToken)

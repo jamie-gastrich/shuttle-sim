@@ -79,6 +79,4 @@ grep -q "ResumeAllExcept" src/FleetManager/TaskBoard.cs          PASS
 - Runtime operator command flow through MQTT (the handler is wired but requires broker up)
 - Mutation testing or stretch goal dashboard latency measurements
 
-## Owner Sign-off
-
-Jamie
+Owner sign-off: Jamie
