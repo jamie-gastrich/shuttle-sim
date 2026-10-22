@@ -1,7 +1,8 @@
 using System.Net;
 using System.Text.Json;
 using FleetCore;
-using FleetManager;
+
+namespace FleetManager.Tests;
 
 internal sealed class StubHandler : HttpMessageHandler
 {

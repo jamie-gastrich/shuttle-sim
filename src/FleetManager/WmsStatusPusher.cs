@@ -21,51 +21,50 @@ public sealed class WmsStatusPusher
 
     public async Task SendPendingAsync(CancellationToken cancellationToken)
     {
-          var ids = _outbox.Claim();
-          foreach (var orderId in ids)
-          {
-              if (!_board.TryGet(orderId, out var order))
-              {
-                  Console.WriteLine($"no order for {orderId}");
-                  continue;
-              }
-        
-              try
-              {
+        var ids = _outbox.Claim();
+        foreach (var orderId in ids)
+        {
+            if (!_board.TryGet(orderId, out var order) || order is null)
+            {
+                Console.WriteLine($"no order for {orderId}");
+                continue;
+            }
+
+            try
+            {
                 var body = JsonSerializer.Serialize(order, Json);
                 using var content = new StringContent(body, Encoding.UTF8, "application/json");
                 using var response = await _client.PostAsync(WmsRoutes.OrderStatus, content, cancellationToken);
-                if(response.IsSuccessStatusCode)
+                if (response.IsSuccessStatusCode)
                 {
                     Console.WriteLine($"pushed {orderId} {order.State}");
                 }
                 else
                 {
                     _outbox.MarkPending(order.OrderId);
-                    Console.WriteLine($"rejected {orderId} {order.State}");
+                    Console.WriteLine($"rejected with {(int)response.StatusCode} {orderId} {order.State}");
                 }
-              }
-              catch (HttpRequestException)
-              {
-                  _outbox.MarkPending(order.OrderId);
-                  Console.WriteLine($"unreachable {orderId} {order.State}");
-              }
-              catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-              {
-                  _outbox.MarkPending(order.OrderId);
-                  Console.WriteLine($"timeout {orderId} {order.State}");
-              }
-          }
+            }
+            catch (HttpRequestException)
+            {
+                _outbox.MarkPending(order.OrderId);
+                Console.WriteLine($"unreachable {orderId} {order.State}");
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                _outbox.MarkPending(order.OrderId);
+                Console.WriteLine($"timeout {orderId} {order.State}");
+            }
+        }
     }
 
     public async Task RunAsync(CancellationToken cancellationToken)
     {
-         using var timer = new PeriodicTimer(_interval);
+        using var timer = new PeriodicTimer(_interval);
 
         while (await timer.WaitForNextTickAsync(cancellationToken))
         {
             await SendPendingAsync(cancellationToken);
         }
     }
-    
 }
