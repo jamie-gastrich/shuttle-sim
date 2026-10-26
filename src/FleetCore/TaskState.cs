@@ -7,7 +7,8 @@ public enum TaskState
     InProgress,
     Done,
     Failed,
-    Paused
+    Paused,
+    Cancelled
 }
 
 public static class TaskStateWire
@@ -20,6 +21,7 @@ public static class TaskStateWire
         TaskState.Done => "done",
         TaskState.Failed => "failed",
         TaskState.Paused => "paused",
+        TaskState.Cancelled => "cancelled",
         _ => throw new ArgumentOutOfRangeException(nameof(state), state, "unknown task state"),
     };
 
@@ -34,6 +36,7 @@ public static class TaskStateWire
             "done" => TaskState.Done,
             "failed" => TaskState.Failed,
             "paused" => TaskState.Paused,
+            "cancelled" => TaskState.Cancelled,
             _ => throw new ArgumentException($"Unknown task state wire name '{wireName}'.", nameof(wireName)),
         };
     }

@@ -234,7 +234,7 @@ async Task<int> RunServeAsync()
 	// The sender reads the current word at send time, so re-pushing is safe.
 	foreach (var restoredTask in restoredTasks)
 	{
-		if (restoredTask.State is TaskState.InProgress or TaskState.Done or TaskState.Failed)
+		if (restoredTask.State is TaskState.InProgress or TaskState.Done or TaskState.Failed or TaskState.Cancelled)
 			outbox.MarkPending(restoredTask.TaskId);
 	}
 
@@ -298,6 +298,27 @@ async Task<int> RunServeAsync()
 		board.TryGet(orderId, out var order)
 			? Results.Ok(order)
 			: Results.Problem(statusCode: 404, title: "Unknown order"));
+
+	webApp.MapPost(WmsRoutes.OrderCancel("{orderId}"), (string orderId) =>
+	{
+		if (!board.TryGet(orderId, out var order) || order is null)
+			return Results.Problem(statusCode: 404, title: "Unknown order");
+
+		if (!taskBoard.TryGet(order.OrderId, out var task) || task is null)
+			return Results.Problem(statusCode: 404, title: "Task not found for order");
+
+		var now = DateTime.UtcNow;
+		task.Cancel(now);
+		var sync = board.SyncFromTask(task.TaskId);
+		if (sync == OrderSyncOutcome.Advanced)
+		{
+			board.TryUpdate(orderId, order with { State = WmsOrderStates.Cancelled }, out _);
+		}
+		var finalState = board.TryGet(orderId, out var updatedOrder) && updatedOrder is not null
+			? updatedOrder.State
+			: order.State;
+		return Results.Ok(new { orderId, newState = finalState });
+	});
 
 	webApp.MapGet(WmsRoutes.Shuttle("{shuttleId}"), (string shuttleId) =>
 		registry.TryGet(shuttleId, out var snap)

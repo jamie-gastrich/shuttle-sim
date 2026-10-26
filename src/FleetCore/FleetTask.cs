@@ -69,6 +69,15 @@ public sealed class FleetTask
         _lastEventAt = now;
     }
 
+    public void Cancel(DateTime now)
+    {
+        EnsureInOrder(now);
+        if (State == TaskState.Done || State == TaskState.Failed || State == TaskState.Cancelled)
+            throw new TaskRejectedException("Cannot cancel a task that is already Done, Failed, or Cancelled.");
+        State = TaskState.Cancelled;
+        _lastEventAt = now;
+    }
+
     private void EnsureInOrder(DateTime now)
     {
         // reject now earlier than _lastEventAt; equal is allowed

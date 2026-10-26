@@ -77,6 +77,28 @@ public class TaskLifecycleTests
     }
 
     [Fact]
+    public void Cancel_from_assigned_enters_cancelled()
+    {
+        var task = new FleetTask("task-1", "A01-L02", Start);
+        task.Assign("SH-01", Start);
+
+        task.Cancel(Start.AddSeconds(1));
+
+        Assert.Equal(TaskState.Cancelled, task.State);
+    }
+
+    [Fact]
+    public void Cancel_after_done_is_rejected()
+    {
+        var task = new FleetTask("task-1", "A01-L02", Start);
+        task.Assign("SH-01", Start);
+        task.Start(Start.AddSeconds(1));
+        task.Complete(Start.AddSeconds(2));
+
+        Assert.Throws<TaskRejectedException>(() => task.Cancel(Start.AddSeconds(3)));
+    }
+
+    [Fact]
     public void Assign_twice_is_rejected()
     {
         var task = new FleetTask("task-1", "A01-L02", Start);

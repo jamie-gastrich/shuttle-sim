@@ -9,6 +9,7 @@ public static class WmsOrderLadder
         TaskState.InProgress => WmsOrderStates.InProgress,
         TaskState.Done => WmsOrderStates.Done,
         TaskState.Failed => WmsOrderStates.Failed,
+        TaskState.Cancelled => WmsOrderStates.Cancelled,
         _ => throw new ArgumentOutOfRangeException(nameof(taskState), taskState, "unknown task state"),
     };
 
@@ -18,6 +19,7 @@ public static class WmsOrderLadder
         "in_progress" => 1,
         "done" => 2,
         "failed" => 2,
+        "cancelled" => 3,
         _ => throw new ArgumentOutOfRangeException(nameof(orderState), orderState, "unknown order state"),
     };
 }

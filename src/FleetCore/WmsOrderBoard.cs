@@ -40,6 +40,19 @@ public sealed class WmsOrderBoard
             return _orders.TryGetValue(orderId, out order);
     }
 
+    public bool TryUpdate(string orderId, WmsOrder updatedOrder, out WmsOrder? previous)
+    {
+        ArgumentNullException.ThrowIfNull(updatedOrder);
+        lock (_gate)
+        {
+            if (!_orders.TryGetValue(orderId, out previous))
+                return false;
+
+            _orders[orderId] = updatedOrder;
+            return true;
+        }
+    }
+
     public void Load(WmsOrder order)
     {
         ArgumentNullException.ThrowIfNull(order);
