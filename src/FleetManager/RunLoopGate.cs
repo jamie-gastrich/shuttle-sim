@@ -5,6 +5,7 @@ namespace FleetManager;
 
 public sealed class RunLoopGate
 {
+    private readonly HashSet<string> _pausedShuttles = new(StringComparer.Ordinal);
     private OccupancyMap Occupancy { get; }
     private Track Track { get; }
     private TrafficController Traffic { get; }
@@ -16,8 +17,35 @@ public sealed class RunLoopGate
         Traffic = traffic ?? throw new ArgumentNullException(nameof(traffic));
     }
 
+    public void Pause(string shuttleId) => _pausedShuttles.Add(shuttleId);
+
+    public void Resume(string shuttleId) => _pausedShuttles.Remove(shuttleId);
+
+    public bool IsPaused(string shuttleId) => _pausedShuttles.Contains(shuttleId);
+
+    public void PauseAll(IEnumerable<string> shuttleIds)
+    {
+        foreach (var shuttleId in shuttleIds)
+        {
+            Pause(shuttleId);
+        }
+    }
+
+    public void ResumeAll(IEnumerable<string> shuttleIds)
+    {
+        foreach (var shuttleId in shuttleIds)
+        {
+            Resume(shuttleId);
+        }
+    }
+
     public bool CanMove(string shuttleId, string destinationLane)
     {
+        if (IsPaused(shuttleId))
+        {
+            return false;
+        }
+
         var currentLane = Occupancy.GetOccupiedLane(shuttleId);
         if (currentLane is null)
         {

@@ -122,6 +122,10 @@ public sealed class RunLoop
             {
                 continue;
             }
+            if (_gate.IsPaused(shuttle.ShuttleId))
+            {
+                continue;
+            }
             try
             {
                 shuttle.CompleteMove(_currentTime);
