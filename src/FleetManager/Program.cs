@@ -200,6 +200,7 @@ async Task<int> RunServeAsync()
 	var loop = new FleetServeLoop(bus, topics, health, evaluator, messaging.FleetManagerId,
 		TimeSpan.FromMilliseconds(intervalMs), () => DateTime.UtcNow);
 	var taskBoard = new FleetCore.TaskBoard();
+	var pauseState = new PauseState();
 	var board = new WmsOrderBoard(taskBoard);
 	var outbox = new WmsStatusOutbox();
 	var orderSync = new OrderSync(board, outbox);
@@ -313,23 +314,31 @@ async Task<int> RunServeAsync()
 			.ToList());
 	webApp.MapGet(WmsRoutes.DeliveryFailures, () => wmsDeliveryFailures.Snapshot());
 	async Task HandleOperatorCommandAsync(MessageReceived message, CancellationToken cancellationToken)
-{
-    var cmd = JsonSerializer.Deserialize<OperatorCommandMessage>(message.Payload);
-    if (cmd is null) return;
+	{
+		var cmd = JsonSerializer.Deserialize<OperatorCommandMessage>(message.Payload);
+		if (cmd is null) return;
 
-    switch (cmd.Kind)
-    {
-        case OperatorCommandMessage.Command.Pause:
-            await taskBoard.PauseAllExcept(cmd.ShuttleId, cancellationToken);
-            break;
-        case OperatorCommandMessage.Command.Resume:
-            await taskBoard.ResumeAllExcept(cmd.ShuttleId, cancellationToken);
-            break;
-        case OperatorCommandMessage.Command.Acknowledge:
-            await alarmRepository.AcknowledgeAsync(cmd.ShuttleId, cancellationToken);
-            break;
-    }
-}
+		switch (cmd.Kind)
+		{
+			case OperatorCommandMessage.Command.Pause:
+				await taskBoard.PauseAllExcept(cmd.ShuttleId, cancellationToken);
+				if (string.IsNullOrWhiteSpace(cmd.ShuttleId))
+					pauseState.PauseAll(registry.ShuttleIds());
+				else
+					pauseState.Pause(cmd.ShuttleId);
+				break;
+			case OperatorCommandMessage.Command.Resume:
+				await taskBoard.ResumeAllExcept(cmd.ShuttleId, cancellationToken);
+				if (string.IsNullOrWhiteSpace(cmd.ShuttleId))
+					pauseState.ResumeAll(registry.ShuttleIds());
+				else
+					pauseState.Resume(cmd.ShuttleId);
+				break;
+			case OperatorCommandMessage.Command.Acknowledge:
+				await alarmRepository.AcknowledgeAsync(cmd.ShuttleId, cancellationToken);
+				break;
+		}
+	}
 	var webTask = webApp.RunAsync(stopping.Token);
 	try
 	{

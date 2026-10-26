@@ -1,5 +1,6 @@
 using ShuttleCore;
 using TrafficCore;
+using FleetCore;
 
 namespace FleetManager.Tests;
 
@@ -128,5 +129,32 @@ public class RunLoopGateTests
         gate.ResumeAll(shuttleIds);
 
         Assert.All(shuttleIds, shuttleId => Assert.False(gate.IsPaused(shuttleId)));
+    }
+
+    [Fact]
+    public void CanMove_returns_false_when_paused_via_shared_state()
+    {
+        var track = new Track(new Rack(aisleCount: 1, lanesPerAisle: 6, slotsPerLane: 1));
+        var traffic = new TrafficController(track, new SegmentReservations());
+        var occupancy = new OccupancyMap();
+        occupancy.SetOccupiedLane("SH-01", "A01-L01");
+        var pauseState = new PauseState();
+        var gate = new RunLoopGate(occupancy, track, traffic, pauseState);
+        pauseState.Pause("SH-01");
+
+        Assert.False(gate.CanMove("SH-01", "A01-L02"));
+    }
+
+    [Fact]
+    public void Shared_state_reflects_pause_made_through_gate()
+    {
+        var track = new Track(new Rack(aisleCount: 1, lanesPerAisle: 6, slotsPerLane: 1));
+        var traffic = new TrafficController(track, new SegmentReservations());
+        var pauseState = new PauseState();
+        var gate = new RunLoopGate(new OccupancyMap(), track, traffic, pauseState);
+
+        gate.Pause("SH-01");
+
+        Assert.True(pauseState.IsPaused("SH-01"));
     }
 }

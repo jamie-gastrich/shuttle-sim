@@ -1,47 +1,48 @@
 using ShuttleCore;
 using TrafficCore;
+using FleetCore;
 
 namespace FleetManager;
 
 public sealed class RunLoopGate
 {
-    private readonly HashSet<string> _pausedShuttles = new(StringComparer.Ordinal);
+    private readonly PauseState _pauseState;
     private OccupancyMap Occupancy { get; }
     private Track Track { get; }
     private TrafficController Traffic { get; }
 
     public RunLoopGate(OccupancyMap occupancy, Track track, TrafficController traffic)
+        : this(occupancy, track, traffic, new PauseState())
+    {
+    }
+
+    public RunLoopGate(
+        OccupancyMap occupancy,
+        Track track,
+        TrafficController traffic,
+        PauseState pauseState)
     {
         Occupancy = occupancy ?? throw new ArgumentNullException(nameof(occupancy));
         Track = track ?? throw new ArgumentNullException(nameof(track));
         Traffic = traffic ?? throw new ArgumentNullException(nameof(traffic));
+        _pauseState = pauseState ?? throw new ArgumentNullException(nameof(pauseState));
     }
 
-    public void Pause(string shuttleId) => _pausedShuttles.Add(shuttleId);
+    public PauseState PauseState => _pauseState;
 
-    public void Resume(string shuttleId) => _pausedShuttles.Remove(shuttleId);
+    public void Pause(string shuttleId) => _pauseState.Pause(shuttleId);
 
-    public bool IsPaused(string shuttleId) => _pausedShuttles.Contains(shuttleId);
+    public void Resume(string shuttleId) => _pauseState.Resume(shuttleId);
 
-    public void PauseAll(IEnumerable<string> shuttleIds)
-    {
-        foreach (var shuttleId in shuttleIds)
-        {
-            Pause(shuttleId);
-        }
-    }
+    public bool IsPaused(string shuttleId) => _pauseState.IsPaused(shuttleId);
 
-    public void ResumeAll(IEnumerable<string> shuttleIds)
-    {
-        foreach (var shuttleId in shuttleIds)
-        {
-            Resume(shuttleId);
-        }
-    }
+    public void PauseAll(IEnumerable<string> shuttleIds) => _pauseState.PauseAll(shuttleIds);
+
+    public void ResumeAll(IEnumerable<string> shuttleIds) => _pauseState.ResumeAll(shuttleIds);
 
     public bool CanMove(string shuttleId, string destinationLane)
     {
-        if (IsPaused(shuttleId))
+        if (_pauseState.IsPaused(shuttleId))
         {
             return false;
         }
@@ -67,7 +68,7 @@ public sealed class RunLoopGate
 
     public bool CommitMove(string shuttleId, string destinationLane)
     {
-        if (IsPaused(shuttleId))
+        if (_pauseState.IsPaused(shuttleId))
         {
             return false;
         }

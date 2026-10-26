@@ -57,6 +57,16 @@ public sealed class ShuttleRegistry
                 .ToList();
         }
     }
+
+    public IReadOnlyList<string> ShuttleIds()
+    {
+        lock (_gate)
+        {
+            return _shuttles.Keys
+                .OrderBy(shuttleId => shuttleId, StringComparer.Ordinal)
+                .ToList();
+        }
+    }
 }
 
 public sealed record ShuttleSnapshot(
