@@ -66,4 +66,4 @@ After these corrections:
 - `src/FleetManager/WmsStatusPusher.cs` — retry state keyed by order id and the due-time check before sending.
 - `src/FleetCore/WmsRetryPolicy.cs` — doubling with a maximum-delay clamp.
 
-Owner sign-off: pending owner review; add the date and "explained and verified" after completing the review gate.
+Owner sign-off:  2026-10-26, explained and verified

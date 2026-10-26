@@ -72,12 +72,30 @@ public class RunLoopGateTests
         var track = new Track(new Rack(aisleCount: 1, lanesPerAisle: 6, slotsPerLane: 1));
         var traffic = new TrafficController(track, new SegmentReservations());
         var occupancy = new OccupancyMap();
+        occupancy.SetOccupiedLane("SH-01", "A01-L01");
         var gate = new RunLoopGate(occupancy, track, traffic);
         gate.Pause("SH-01");
 
         var canMove = gate.CanMove("SH-01", "A01-L02");
 
         Assert.False(canMove);
+        gate.Resume("SH-01");
+        Assert.True(gate.CanMove("SH-01", "A01-L02"));
+    }
+
+    [Fact]
+    public void CommitMove_returns_false_when_paused()
+    {
+        var track = new Track(new Rack(aisleCount: 1, lanesPerAisle: 6, slotsPerLane: 1));
+        var reservations = new SegmentReservations();
+        var traffic = new TrafficController(track, reservations);
+        var occupancy = new OccupancyMap();
+        occupancy.SetOccupiedLane("SH-01", "A01-L01");
+        var gate = new RunLoopGate(occupancy, track, traffic);
+        gate.Pause("SH-01");
+
+        Assert.False(gate.CommitMove("SH-01", "A01-L02"));
+        Assert.Empty(reservations.SegmentsOwnedBy("SH-01"));
     }
 
     [Fact]

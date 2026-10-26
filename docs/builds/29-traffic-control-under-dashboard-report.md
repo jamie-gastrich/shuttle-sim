@@ -17,12 +17,25 @@ The pause state is independent of `TaskBoard`. No message contract, configuratio
 
 ## Verification
 
-- `dotnet test src/FleetManager.Tests/FleetManager.Tests.csproj --filter "FullyQualifiedName~RunLoopGate|FullyQualifiedName~Paused_shuttle_does_not_complete_its_move"` — passed, 8 tests.
+- `dotnet test src/FleetManager.Tests/FleetManager.Tests.csproj --filter "FullyQualifiedName~RunLoopGate|FullyQualifiedName~Paused_shuttle_does_not_complete_its_move"` — passed, 9 tests after the latest review follow-up.
 - `dotnet build src/ShuttleFleet.slnx --no-incremental` — passed, 0 warnings and 0 errors.
-- `dotnet test src/ShuttleFleet.slnx -v m --filter "Category!=Integration"` — passed, 223 tests, 0 failed.
+- `dotnet test src/ShuttleFleet.slnx -v m --filter "Category!=Integration"` — passed, 224 tests, 0 failed after the latest review follow-up.
 - Assignment source checks for `IsPaused`, `Pause`, and the move-completion pause check — passed.
 - Contract scope check (`git diff -- src/Contracts docs/contract`) — passed; no contract changes.
 - `appsettings.json` was not changed. `ContractVersion.Current` was not changed.
+
+## Review follow-up
+
+- `CanMove_returns_false_when_paused` records a clear occupied lane before pausing and confirms the same route is allowed after resume.
+- The paused-move test now uses a one-second-per-lane travel time and pauses for five ticks, longer than the two-second route. Without the completion-loop pause check, the move would complete during the paused interval.
+- `CommitMove` now refuses a paused shuttle before reserving any route; a test verifies no reservation is created.
+- The review's concern about connecting separate pause sets to dashboard/serve-loop commands and deciding whether paused simulation time counts toward travel remains out of scope for this lesson and requires a follow-up decision.
+- `dotnet test src/FleetManager.Tests/FleetManager.Tests.csproj --filter "FullyQualifiedName~RunLoopGate|FullyQualifiedName~Paused_shuttle_does_not_complete_its_move"` — passed, 10 tests after the prior follow-up, before removing the vacuous case.
+- `dotnet build src/ShuttleFleet.slnx --no-incremental` — passed, 0 warnings and 0 errors after the follow-up.
+- `dotnet test src/ShuttleFleet.slnx -v m --filter "Category!=Integration"` — passed, 225 tests, 0 failed after the prior follow-up, before removing the vacuous case.
+- `git diff --check` — passed.
+- Mutation check: temporarily removing the `CanMove` pause guard made `CanMove_returns_false_when_paused` fail; temporarily removing the move-completion pause guard made `Paused_shuttle_does_not_complete_its_move` fail. Both guards were restored, then the 10 focused tests passed again.
+- Removed the no-occupancy test because its false result could come from the missing-lane branch even if the pause guard were removed; the main paused test remains mutation-sensitive.
 
 ## Study first
 
@@ -32,4 +45,4 @@ The pause state is independent of `TaskBoard`. No message contract, configuratio
 
 ## Owner review gate
 
-Owner sign-off: pending owner review; add the date and "explained and verified" after completing the review gate.
+Owner sign-off: 2026-10-26, explained and verified

@@ -67,6 +67,11 @@ public sealed class RunLoopGate
 
     public bool CommitMove(string shuttleId, string destinationLane)
     {
+        if (IsPaused(shuttleId))
+        {
+            return false;
+        }
+
         var currentLane = Occupancy.GetOccupiedLane(shuttleId);
         if (currentLane is null)
         {

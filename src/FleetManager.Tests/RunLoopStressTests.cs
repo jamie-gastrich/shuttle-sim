@@ -19,7 +19,7 @@ public class RunLoopStressTests
         var orderSync = new OrderSync(new WmsOrderBoard(board), new WmsStatusOutbox());
         var dispatcher = new TaskDispatcher(board, repository, orderSync);
         var gate = new RunLoopGate(occupancy, track, traffic);
-        var timing = new ShuttleTiming(TimeSpan.FromSeconds(5), TimeSpan.Zero, TimeSpan.Zero);
+        var timing = new ShuttleTiming(TimeSpan.FromSeconds(1), TimeSpan.Zero, TimeSpan.Zero);
         var start = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         var shuttle = new Shuttle("SH-01", rack, "A01-L01", timing);
         occupancy.SetOccupiedLane(shuttle.ShuttleId, shuttle.Position);
