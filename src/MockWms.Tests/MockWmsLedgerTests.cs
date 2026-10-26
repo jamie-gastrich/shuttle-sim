@@ -1,3 +1,5 @@
+using MockWms;
+
 namespace MockWms.Tests;
 
 public class MockWmsLedgerTests
