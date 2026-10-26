@@ -1,7 +1,6 @@
 ---
 description: Critical code reviewer who judges student work against the lesson, decision record, and the shuttle fleet sim end-product spec
 mode: all
-model: opencode/big-pickle
 tools:
   write: true
   edit: true
