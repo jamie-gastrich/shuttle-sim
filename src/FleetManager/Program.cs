@@ -336,6 +336,13 @@ async Task<int> RunServeAsync()
 				break;
 			case OperatorCommandMessage.Command.Acknowledge:
 				await alarmRepository.AcknowledgeAsync(cmd.ShuttleId, cancellationToken);
+				// Also clear the shuttle's fault state via the M5 recovery channel.
+				// One dashboard click both acknowledges the alarm and clears the fault.
+				var recoveryEnvelope = MessageEnvelopes.Create(
+					MessageTypes.RecoveryCommand, messaging.FleetManagerId, DateTime.UtcNow);
+				var recoveryCmd = new RecoveryCommandMessage(recoveryEnvelope, cmd.ShuttleId);
+				await bus.PublishAsync(topics.RecoveryCommand(cmd.ShuttleId),
+					JsonSerializer.Serialize(recoveryCmd), MessageFamily.Json, cancellationToken);
 				break;
 		}
 	}
