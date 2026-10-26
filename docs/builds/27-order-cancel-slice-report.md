@@ -27,4 +27,4 @@ Result: 44 passed, 0 failed.
 
 The full FleetManager integration suite still depends on the local Docker-backed MQTT broker and PostgreSQL services; those were not started in this session, so the integration tests remain not yet verified locally. The core cancel logic and state-machine checks were verified directly with the targeted FleetCore test run above.
 
-Owner sign-off: Jamie
+Owner sign-off: 2026-10-26, explained and verified

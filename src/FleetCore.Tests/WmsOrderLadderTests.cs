@@ -21,8 +21,28 @@ public class WmsOrderLadderTests
         Assert.Equal("received", WmsOrderLadder.ForTask(TaskState.Queued));
         Assert.Equal("received", WmsOrderLadder.ForTask(TaskState.Assigned));
         Assert.Equal("in_progress", WmsOrderLadder.ForTask(TaskState.InProgress));
+        Assert.Equal("in_progress", WmsOrderLadder.ForTask(TaskState.Paused));
         Assert.Equal("done", WmsOrderLadder.ForTask(TaskState.Done));
         Assert.Equal("failed", WmsOrderLadder.ForTask(TaskState.Failed));
+        Assert.Equal("cancelled", WmsOrderLadder.ForTask(TaskState.Cancelled));
+    }
+
+    [Fact]
+    public void Ladder_sync_on_cancel_advances_order()
+    {
+        var tasks = new TaskBoard();
+        var board = new WmsOrderBoard(tasks);
+        board.Submit(Request(), Start);
+        var task = tasks.Get("ORD-1");
+
+        task.Assign("SHUTTLE-1", Start);
+        task.Start(Start.AddSeconds(1));
+        task.Cancel(Start.AddSeconds(2));
+
+        var result = board.SyncFromTask("ORD-1");
+
+        Assert.Equal(OrderSyncOutcome.Advanced, result);
+        Assert.Equal("cancelled", StateOf(board, "ORD-1"));
     }
 
     [Fact]

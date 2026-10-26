@@ -77,6 +77,17 @@ public class TaskLifecycleTests
     }
 
     [Fact]
+    public void Task_Cancel_transitions_state()
+    {
+        var task = new FleetTask("task-1", "A01-L02", Start);
+        task.Assign("SH-01", Start);
+
+        task.Cancel(Start.AddSeconds(1));
+
+        Assert.Equal(TaskState.Cancelled, task.State);
+    }
+
+    [Fact]
     public void Cancel_from_assigned_enters_cancelled()
     {
         var task = new FleetTask("task-1", "A01-L02", Start);

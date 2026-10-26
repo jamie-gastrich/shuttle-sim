@@ -300,25 +300,7 @@ async Task<int> RunServeAsync()
 			: Results.Problem(statusCode: 404, title: "Unknown order"));
 
 	webApp.MapPost(WmsRoutes.OrderCancel("{orderId}"), (string orderId) =>
-	{
-		if (!board.TryGet(orderId, out var order) || order is null)
-			return Results.Problem(statusCode: 404, title: "Unknown order");
-
-		if (!taskBoard.TryGet(order.OrderId, out var task) || task is null)
-			return Results.Problem(statusCode: 404, title: "Task not found for order");
-
-		var now = DateTime.UtcNow;
-		task.Cancel(now);
-		var sync = board.SyncFromTask(task.TaskId);
-		if (sync == OrderSyncOutcome.Advanced)
-		{
-			board.TryUpdate(orderId, order with { State = WmsOrderStates.Cancelled }, out _);
-		}
-		var finalState = board.TryGet(orderId, out var updatedOrder) && updatedOrder is not null
-			? updatedOrder.State
-			: order.State;
-		return Results.Ok(new { orderId, newState = finalState });
-	});
+		WmsOrderCancelEndpoint.Handle(board, taskBoard, orderId, DateTime.UtcNow));
 
 	webApp.MapGet(WmsRoutes.Shuttle("{shuttleId}"), (string shuttleId) =>
 		registry.TryGet(shuttleId, out var snap)

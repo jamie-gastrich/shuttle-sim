@@ -7,6 +7,7 @@ public static class WmsOrderLadder
         TaskState.Queued => WmsOrderStates.Received,
         TaskState.Assigned => WmsOrderStates.Received,
         TaskState.InProgress => WmsOrderStates.InProgress,
+        TaskState.Paused => WmsOrderStates.InProgress,
         TaskState.Done => WmsOrderStates.Done,
         TaskState.Failed => WmsOrderStates.Failed,
         TaskState.Cancelled => WmsOrderStates.Cancelled,
