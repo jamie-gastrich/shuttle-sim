@@ -70,7 +70,7 @@ public sealed class WmsStatusPusher
                 using var content = new StringContent(body, Encoding.UTF8, "application/json");
                 using var response = await _client.PostAsync(WmsRoutes.OrderStatus, content, cancellationToken);
                 var statusCode = (int)response.StatusCode;
-                var outcome = ApplyOutcome(orderId, statusCode, now);
+                var outcome = ApplyOutcome(orderId, statusCode, now, out var retryDelay);
                 if (outcome == WmsDeliveryResult.Delivered)
                 {
                     Console.WriteLine($"pushed {orderId} {order.State}");
@@ -81,29 +81,38 @@ public sealed class WmsStatusPusher
                 }
                 else
                 {
-                    Console.WriteLine($"rejected with {statusCode} {orderId} {order.State}");
+                    Console.WriteLine(
+                        $"retry {orderId} in {retryDelay.TotalMilliseconds:0} ms after HTTP {statusCode}");
                 }
             }
             catch (HttpRequestException)
             {
-                ApplyOutcome(orderId, null, now);
-                Console.WriteLine($"unreachable {orderId} {order.State}");
+                ApplyOutcome(orderId, null, now, out var retryDelay);
+                Console.WriteLine(
+                    $"retry {orderId} in {retryDelay.TotalMilliseconds:0} ms after unreachable");
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
-                ApplyOutcome(orderId, null, now);
-                Console.WriteLine($"timeout {orderId} {order.State}");
+                ApplyOutcome(orderId, null, now, out var retryDelay);
+                Console.WriteLine(
+                    $"retry {orderId} in {retryDelay.TotalMilliseconds:0} ms after timeout");
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                ApplyOutcome(orderId, null, now);
-                Console.WriteLine($"status push: failed {orderId} {ex.GetType().Name}, will retry");
+                ApplyOutcome(orderId, null, now, out var retryDelay);
+                Console.WriteLine(
+                    $"retry {orderId} in {retryDelay.TotalMilliseconds:0} ms after {ex.GetType().Name}");
             }
         }
     }
 
-    private WmsDeliveryResult ApplyOutcome(string orderId, int? statusCode, DateTime now)
+    private WmsDeliveryResult ApplyOutcome(
+        string orderId,
+        int? statusCode,
+        DateTime now,
+        out TimeSpan retryDelay)
     {
+        retryDelay = TimeSpan.Zero;
         var outcome = WmsDeliveryOutcome.FromStatus(statusCode);
         if (outcome == WmsDeliveryResult.Delivered)
         {
@@ -117,19 +126,21 @@ public sealed class WmsStatusPusher
         }
         else
         {
-            ScheduleRetry(orderId, now);
+            retryDelay = ScheduleRetry(orderId, now);
         }
 
         return outcome;
     }
 
-    private void ScheduleRetry(string orderId, DateTime now)
+    private TimeSpan ScheduleRetry(string orderId, DateTime now)
     {
-        var failures = _retry.TryGetValue(orderId, out var state) && state.Failures < int.MaxValue
+        var failures = _retry.TryGetValue(orderId, out var state)
             ? state.Failures + 1
-            : state is null ? 1 : int.MaxValue;
-        _retry[orderId] = new RetryState(failures, now + _retryPolicy.DelayFor(failures));
+            : 1;
+        var delay = _retryPolicy.DelayFor(failures);
+        _retry[orderId] = new RetryState(failures, now + delay);
         _outbox.MarkPending(orderId);
+        return delay;
     }
 
     public async Task RunAsync(CancellationToken cancellationToken)

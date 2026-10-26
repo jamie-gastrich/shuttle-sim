@@ -1,3 +1,5 @@
+using MockWms;
+
 var builder = WebApplication.CreateBuilder(args);
 var slowDelayMs = builder.Configuration.GetValue<int>("MockWms:SlowDelayMs");
 if (slowDelayMs < 1)

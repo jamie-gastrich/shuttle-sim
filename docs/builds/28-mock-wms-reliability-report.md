@@ -46,10 +46,24 @@ The mock has no references to `FleetCore` or `Contracts`. `src/Contracts/`, `doc
 
 Integration tests requiring supporting services were not run; the requested non-integration suite passed.
 
+## Review 28 follow-up
+
+The reviewer found that the committed snapshot was missing `using MockWms;` in
+the top-level app. That import is now present. The retry failure count was
+simplified to increment from its previous value, retry log messages now include
+the computed delay, and the README clarifies that `hang` waits until the client
+cancels and is not a production WMS.
+
+After these corrections:
+
+- `cd src && dotnet build --no-incremental` — passed, 0 warnings and 0 errors.
+- `cd src && dotnet test ShuttleFleet.slnx -v m --filter "Category!=Integration"` — passed, 213 tests, 0 failed.
+- `git diff --check` — passed.
+
 ## Study first
 
 - `src/MockWms/MockWmsLedger.cs` — identity check, duplicate check, then rank comparison inside one lock.
 - `src/FleetManager/WmsStatusPusher.cs` — retry state keyed by order id and the due-time check before sending.
 - `src/FleetCore/WmsRetryPolicy.cs` — doubling with a maximum-delay clamp.
 
-Owner sign-off: Jamie
+Owner sign-off: pending owner review; add the date and "explained and verified" after completing the review gate.
