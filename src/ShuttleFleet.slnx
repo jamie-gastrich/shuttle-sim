@@ -6,6 +6,8 @@
   <Project Path="Messaging/Messaging.csproj" />
   <Project Path="Messaging.Tests/Messaging.Tests.csproj" />
   <Project Path="MqttMessaging/MqttMessaging.csproj" />
+  <Project Path="MockWms.Tests/MockWms.Tests.csproj" />
+  <Project Path="MockWms/MockWms.csproj" />
   <Project Path="MqttMessaging.Tests/MqttMessaging.Tests.csproj" />
   <Project Path="ShuttleCore/ShuttleCore.csproj" />
   <Project Path="ShuttleCore.Tests/ShuttleCore.Tests.csproj" />

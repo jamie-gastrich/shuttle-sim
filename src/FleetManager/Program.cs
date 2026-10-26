@@ -164,6 +164,16 @@ async Task<int> RunServeAsync()
 	var wmsIntervalMs = configuration.GetValue<int>("Wms:StatusIntervalMs");
 	if (wmsIntervalMs < 1)
 		throw new InvalidOperationException("Wms:StatusIntervalMs must be positive.");
+	var retryBaseDelayMs = configuration.GetValue<int>("Wms:RetryBaseDelayMs");
+	if (retryBaseDelayMs < 1)
+		throw new InvalidOperationException("Wms:RetryBaseDelayMs must be positive.");
+	var maxRetryDelayMs = configuration.GetValue<int>("Wms:MaxRetryDelayMs");
+	if (maxRetryDelayMs < retryBaseDelayMs)
+		throw new InvalidOperationException("Wms:MaxRetryDelayMs must be at least RetryBaseDelayMs.");
+	var wmsRetryPolicy = new WmsRetryPolicy(
+		TimeSpan.FromMilliseconds(retryBaseDelayMs),
+		TimeSpan.FromMilliseconds(maxRetryDelayMs));
+	var wmsDeliveryFailures = new WmsDeliveryFailures();
 	var tickIntervalMs = configuration.GetValue<int>("FleetManager:TaskExecutionIntervalMs");
 	if (tickIntervalMs < 1)
 		throw new InvalidOperationException("FleetManager:TaskExecutionIntervalMs must be positive.");
@@ -240,7 +250,14 @@ async Task<int> RunServeAsync()
 		BaseAddress = wmsUri,
 		Timeout = TimeSpan.FromMilliseconds(wmsTimeoutMs),
 	};
-	var pusher = new WmsStatusPusher(board, outbox, wmsClient, TimeSpan.FromMilliseconds(wmsIntervalMs));
+	var pusher = new WmsStatusPusher(
+		board,
+		outbox,
+		wmsClient,
+		TimeSpan.FromMilliseconds(wmsIntervalMs),
+		wmsRetryPolicy,
+		wmsDeliveryFailures,
+		() => DateTime.UtcNow);
 
 	await bus.SubscribeAsync(topics.AllStatuses, MessageFamily.Status, execution.HandleStatusAsync, CancellationToken.None);
 	await bus.SubscribeAsync(topics.AllAcks, MessageFamily.Ack, sender.OnAckReceivedAsync, CancellationToken.None);
@@ -291,6 +308,7 @@ async Task<int> RunServeAsync()
 		taskBoard.Queued()
 			.Select(t => new { t.TaskId, t.State, t.AssignedShuttleId })
 			.ToList());
+	webApp.MapGet(WmsRoutes.DeliveryFailures, () => wmsDeliveryFailures.Snapshot());
 	async Task HandleOperatorCommandAsync(MessageReceived message, CancellationToken cancellationToken)
 {
     var cmd = JsonSerializer.Deserialize<OperatorCommandMessage>(message.Payload);
