@@ -2,7 +2,7 @@ using Npgsql;
 
 namespace FleetManager;
 
-public sealed class PostgresAlarmRepository
+public sealed class PostgresAlarmRepository : IAlarmRepository
 {
     private const string CreateTableSql = """
         CREATE TABLE IF NOT EXISTS alarms (

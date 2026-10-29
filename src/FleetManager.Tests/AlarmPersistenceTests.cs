@@ -16,13 +16,24 @@ public class AlarmPersistenceTests
     {
         var connectionString = TestDatabase.BuildConnectionString();
         var repository = new PostgresAlarmRepository(connectionString);
+        var shuttleId = $"TEST-ALARM-{Guid.NewGuid():N}";
 
-        await repository.SaveAsync(
-            new PostgresAlarmRepository.Alarm("SH-INT", AlarmSeverities.Critical, AlarmCodes.LostCommunication, Start, null),
-            CancellationToken.None);
+        // Load first so the table exists before the cleanup statement runs.
+        await repository.LoadAllAsync(CancellationToken.None);
+        await TestDatabase.ResetAlarmsAsync(CancellationToken.None);
+        try
+        {
+            await repository.SaveAsync(
+                new PostgresAlarmRepository.Alarm(shuttleId, AlarmSeverities.Critical, AlarmCodes.LostCommunication, Start, null),
+                CancellationToken.None);
 
-        var loaded = await repository.LoadAllAsync(CancellationToken.None);
-        Assert.Contains(loaded, a => a.ShuttleId == "SH-INT" && a.Code == AlarmCodes.LostCommunication);
+            var loaded = await repository.LoadAllAsync(CancellationToken.None);
+            Assert.Contains(loaded, a => a.ShuttleId == shuttleId && a.Code == AlarmCodes.LostCommunication);
+        }
+        finally
+        {
+            await TestDatabase.ResetAlarmsAsync(CancellationToken.None);
+        }
     }
 
     [Fact]
@@ -30,22 +41,33 @@ public class AlarmPersistenceTests
     {
         var connectionString = TestDatabase.BuildConnectionString();
         var repository = new PostgresAlarmRepository(connectionString);
+        var shuttleId = $"TEST-ALARM-{Guid.NewGuid():N}";
 
-        var bus = new RecordingBus();
-        var topics = new TopicScheme("shuttle");
-        var health = new ShuttleHealth(TimeSpan.FromSeconds(30));
-        var evaluator = new AlarmEvaluator(AlarmSeverities.Critical, AlarmSeverities.Warning);
-        var loop = new FleetServeLoop(bus, topics, health, evaluator, "fleet-manager", TimeSpan.FromSeconds(1), () => Start, repository);
+        // Load first so the table exists before the cleanup statement runs.
+        await repository.LoadAllAsync(CancellationToken.None);
+        await TestDatabase.ResetAlarmsAsync(CancellationToken.None);
+        try
+        {
+            var bus = new RecordingBus();
+            var topics = new TopicScheme("shuttle");
+            var health = new ShuttleHealth(TimeSpan.FromSeconds(30));
+            var evaluator = new AlarmEvaluator(AlarmSeverities.Critical, AlarmSeverities.Warning);
+            var loop = new FleetServeLoop(bus, topics, health, evaluator, "fleet-manager", TimeSpan.FromSeconds(1), () => Start, repository);
 
-        await loop.SubscribeAsync(CancellationToken.None);
-        await bus.Handler!(new MessageReceived(topics.Status("SH-INT2"),
-            JsonSerializer.Serialize(new ShuttleStatusMessage(
-                new MessageEnvelope(ContractVersion.Current, MessageTypes.ShuttleStatus, Guid.NewGuid().ToString(), null, "SH-INT2", Start),
-                new ShuttleStatus("SH-INT2", "idle", "A01-L01", Start, null)))), CancellationToken.None);
+            await loop.SubscribeAsync(CancellationToken.None);
+            await bus.Handler!(new MessageReceived(topics.Status(shuttleId),
+                JsonSerializer.Serialize(new ShuttleStatusMessage(
+                    new MessageEnvelope(ContractVersion.Current, MessageTypes.ShuttleStatus, Guid.NewGuid().ToString(), null, shuttleId, Start),
+                    new ShuttleStatus(shuttleId, "idle", "A01-L01", Start, null)))), CancellationToken.None);
 
-        await loop.EvaluateAndPublishAsync(Start.AddSeconds(31), CancellationToken.None);
+            await loop.EvaluateAndPublishAsync(Start.AddSeconds(31), CancellationToken.None);
 
-        var loaded = await repository.LoadAllAsync(CancellationToken.None);
-        Assert.Contains(loaded, a => a.ShuttleId == "SH-INT2" && a.Code == AlarmCodes.LostCommunication);
+            var loaded = await repository.LoadAllAsync(CancellationToken.None);
+            Assert.Contains(loaded, a => a.ShuttleId == shuttleId && a.Code == AlarmCodes.LostCommunication);
+        }
+        finally
+        {
+            await TestDatabase.ResetAlarmsAsync(CancellationToken.None);
+        }
     }
 }

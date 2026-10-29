@@ -17,11 +17,11 @@ public sealed class FleetServeLoop
     private readonly object _knownLock = new();
     private readonly HashSet<string> _knownShuttles = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _faultCodes = new(StringComparer.Ordinal);
-    private readonly PostgresAlarmRepository? _alarmRepository;
+    private readonly IAlarmRepository? _alarmRepository;
 
     public FleetServeLoop(IMessageBus bus, TopicScheme topics, ShuttleHealth health,
     AlarmEvaluator evaluator, string fleetManagerId, TimeSpan evaluationInterval, Func<DateTime> clock,
-    PostgresAlarmRepository? alarmRepository = null)
+    IAlarmRepository? alarmRepository = null)
     {
         _bus = bus ?? throw new ArgumentNullException(nameof(bus));
         _topics = topics ?? throw new ArgumentNullException(nameof(topics));
@@ -102,9 +102,23 @@ public sealed class FleetServeLoop
                 await PublishAlarmAsync(alarm, now, cancellationToken);
                 if (_alarmRepository is not null)
                 {
-                    await _alarmRepository.SaveAsync(
-                        new PostgresAlarmRepository.Alarm(alarm.ShuttleId, alarm.Severity, alarm.Code, now, null),
-                        cancellationToken);
+                    try
+                    {
+                        await _alarmRepository.SaveAsync(
+                            new PostgresAlarmRepository.Alarm(alarm.ShuttleId, alarm.Severity, alarm.Code, now, null),
+                            cancellationToken);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        // The alarm was already published. A database failure must
+                        // not stop the liveness loop from checking other shuttles.
+                        Console.WriteLine(
+                            $"fleet manager: could not save alarm for {alarm.ShuttleId}: {ex.GetType().Name} {ex.Message}");
+                    }
                 }
             }
         }

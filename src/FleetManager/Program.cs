@@ -321,46 +321,8 @@ async Task<int> RunServeAsync()
 			.Select(t => new { t.TaskId, t.State, t.AssignedShuttleId })
 			.ToList());
 	webApp.MapGet(WmsRoutes.DeliveryFailures, () => wmsDeliveryFailures.Snapshot());
-	webApp.MapGet(DashboardRoutes.Config, () =>
-		Results.Ok(new { laneIds = dashboardLaneIds, refreshIntervalMs = dashboardRefreshMs }));
-	webApp.MapGet(DashboardRoutes.Shuttles, () =>
-		registry.Snapshot().Select(shuttle => new
-		{
-			shuttle.ShuttleId,
-			shuttle.State,
-			shuttle.Position,
-			shuttle.SeenAt,
-			pauseRequested = pauseState.IsPaused(shuttle.ShuttleId),
-		}).ToList());
-	webApp.MapGet(DashboardRoutes.Tasks, () =>
-		taskBoard.Queued().Select(task => new { task.TaskId, task.State, task.AssignedShuttleId }).ToList());
-	webApp.MapGet(DashboardRoutes.Alarms, async () =>
-		await alarmRepository.LoadAllAsync(CancellationToken.None));
-	webApp.MapPost(DashboardRoutes.OperatorCommand, async (DashboardOperatorCommandRequest request) =>
-	{
-		if (request is null || string.IsNullOrWhiteSpace(request.ShuttleId) || string.IsNullOrWhiteSpace(request.Kind))
-			return Results.BadRequest("shuttleId and kind are required.");
-
-		OperatorCommandMessage.Command kind = request.Kind switch
-		{
-			"Pause" => OperatorCommandMessage.Command.Pause,
-			"Resume" => OperatorCommandMessage.Command.Resume,
-			"Acknowledge" => OperatorCommandMessage.Command.Acknowledge,
-			_ => (OperatorCommandMessage.Command)(-1),
-		};
-		if ((int)kind < 0)
-			return Results.BadRequest("kind must be Pause, Resume, or Acknowledge.");
-
-		var command = new OperatorCommandMessage
-		{
-			ShuttleId = request.ShuttleId,
-			Kind = kind,
-			Reason = request.Reason,
-		};
-		await bus.PublishAsync(topics.OperatorCommand, JsonSerializer.Serialize(command),
-			MessageFamily.Json, CancellationToken.None);
-		return Results.Ok();
-	});
+	DashboardEndpoints.MapDashboardRoutes(webApp, bus, topics, registry, taskBoard, pauseState,
+		alarmRepository, dashboardLaneIds, dashboardRefreshMs);
 	async Task HandleOperatorCommandAsync(MessageReceived message, CancellationToken cancellationToken)
 	{
 		var cmd = JsonSerializer.Deserialize<OperatorCommandMessage>(message.Payload);

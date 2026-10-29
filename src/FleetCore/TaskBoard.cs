@@ -29,23 +29,44 @@ public sealed class TaskBoard
 
     public int Count => _tasks.Count;
 
-    public async Task PauseAllExcept(string shuttleId, CancellationToken cancellationToken)
+    public Task PauseAllExcept(string shuttleId, CancellationToken cancellationToken)
     {
-        var all = _tasks.ToList();
-        foreach (var t in all)
+        if (string.IsNullOrWhiteSpace(shuttleId))
         {
-            if (t.TaskId != shuttleId)
-                _pausedTaskIds.Add(t.TaskId);
+            // An empty shuttle id means "all shuttles": pause every queued task.
+            foreach (var task in _tasks)
+                _pausedTaskIds.Add(task.TaskId);
+            return Task.CompletedTask;
         }
+
+        foreach (var task in _tasks)
+        {
+            // A queued task has no owner yet. Pausing one shuttle must not hide
+            // work that another shuttle can still take, so only work already
+            // assigned to a different shuttle is paused here. Work owned by the
+            // named shuttle is left running.
+            if (task.AssignedShuttleId is { } owner && owner != shuttleId)
+                _pausedTaskIds.Add(task.TaskId);
+        }
+        return Task.CompletedTask;
     }
 
-    public async Task ResumeAllExcept(string shuttleId, CancellationToken cancellationToken)
+    public Task ResumeAllExcept(string shuttleId, CancellationToken cancellationToken)
     {
-        var all = _tasks.ToList();
-        foreach (var t in all)
+        if (string.IsNullOrWhiteSpace(shuttleId))
         {
-            if (t.TaskId != shuttleId)
-                _pausedTaskIds.Remove(t.TaskId);
+            _pausedTaskIds.Clear();
+            return Task.CompletedTask;
         }
+
+        foreach (var task in _tasks)
+        {
+            // Clear the paused mark for everything except work still owned by the
+            // named shuttle. Including unowned tasks here also clears the mark
+            // when paused work was requeued and no longer has an owner.
+            if (task.AssignedShuttleId != shuttleId)
+                _pausedTaskIds.Remove(task.TaskId);
+        }
+        return Task.CompletedTask;
     }
 }

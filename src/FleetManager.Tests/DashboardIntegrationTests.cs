@@ -1,102 +1,47 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Contracts;
 using Messaging;
-using Microsoft.AspNetCore.Http;
-using FleetCore;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
+using FleetCore;
 
 namespace FleetManager.Tests;
 
 public class DashboardIntegrationTests
 {
-    private static WebApplication BuildApp(RecordingBus bus, out ShuttleRegistry registry, out TaskBoard taskBoard, out PauseState pauseState)
-    {
-        var builder = WebApplication.CreateBuilder();
-        builder.WebHost.UseTestServer();
-        var app = builder.Build();
-
-        registry = new ShuttleRegistry();
-        taskBoard = new TaskBoard();
-        pauseState = new PauseState();
-
-        var laneIds = new[] { "A01-L01", "A01-L02" };
-        const int refreshMs = 1500;
-
-        var topics = new TopicScheme("shuttle");
-        var pause = pauseState;
-        var reg = registry;
-        var board = taskBoard;
-
-        app.MapGet(DashboardRoutes.Config, () =>
-            Results.Ok(new { laneIds = laneIds, refreshIntervalMs = refreshMs }));
-        app.MapGet(DashboardRoutes.Shuttles, () =>
-            reg.Snapshot().Select(shuttle => new
-            {
-                shuttle.ShuttleId,
-                shuttle.State,
-                shuttle.Position,
-                shuttle.SeenAt,
-                pauseRequested = pause.IsPaused(shuttle.ShuttleId),
-            }).ToList());
-        app.MapGet(DashboardRoutes.Tasks, () =>
-            board.Queued().Select(task => new { task.TaskId, task.State, task.AssignedShuttleId }).ToList());
-        app.MapPost(DashboardRoutes.OperatorCommand, async (DashboardOperatorCommandRequest request) =>
-        {
-            if (request is null || string.IsNullOrWhiteSpace(request.ShuttleId) || string.IsNullOrWhiteSpace(request.Kind))
-                return Results.BadRequest();
-            OperatorCommandMessage.Command kind = request.Kind switch
-            {
-                "Pause" => OperatorCommandMessage.Command.Pause,
-                "Resume" => OperatorCommandMessage.Command.Resume,
-                "Acknowledge" => OperatorCommandMessage.Command.Acknowledge,
-                _ => (OperatorCommandMessage.Command)(-1),
-            };
-            if ((int)kind < 0) return Results.BadRequest();
-            var command = new OperatorCommandMessage { ShuttleId = request.ShuttleId, Kind = kind, Reason = request.Reason };
-            await bus.PublishAsync(topics.OperatorCommand, System.Text.Json.JsonSerializer.Serialize(command), MessageFamily.Json, CancellationToken.None);
-            return Results.Ok();
-        });
-
-        return app;
-    }
-
     [Fact]
-    public async Task Config_returns_lanes_and_refresh_interval()
+    public async Task Config_returns_configured_lanes_and_refresh_interval()
     {
-        var bus = new RecordingBus();
-        var app = BuildApp(bus, out _, out _, out _);
-        await app.StartAsync();
+        var app = await StartAppAsync();
         try
         {
-            using var client = app.GetTestClient();
+            using var client = app.Application.GetTestClient();
             var res = await client.GetAsync(DashboardRoutes.Config);
             Assert.Equal(HttpStatusCode.OK, res.StatusCode);
             var payload = await res.Content.ReadFromJsonAsync<ConfigDto>();
             Assert.NotNull(payload);
-            Assert.Equal(2, payload!.laneIds.Length);
+            Assert.Equal(new[] { "A01-L01", "A01-L02" }, payload!.laneIds);
             Assert.Equal(1500, payload.refreshIntervalMs);
         }
         finally
         {
-            await app.StopAsync();
-            await app.DisposeAsync();
+            await StopAsync(app.Application);
         }
     }
 
     [Fact]
     public async Task Shuttles_returns_snapshots_with_pause_requested()
     {
-        var bus = new RecordingBus();
-        var app = BuildApp(bus, out var registry, out _, out var pauseState);
-        registry.Record(new ShuttleStatus("SH-01", "idle", "A01-L01", DateTime.UtcNow, null));
-        pauseState.Pause("SH-01");
-        await app.StartAsync();
+        var app = await StartAppAsync();
         try
         {
-            using var client = app.GetTestClient();
+            app.Registry.Record(new ShuttleStatus("SH-01", "idle", "A01-L01", DateTime.UtcNow, null));
+            app.PauseState.Pause("SH-01");
+
+            using var client = app.Application.GetTestClient();
             var res = await client.GetAsync(DashboardRoutes.Shuttles);
             Assert.Equal(HttpStatusCode.OK, res.StatusCode);
             var payload = await res.Content.ReadFromJsonAsync<List<ShuttleDto>>();
@@ -107,21 +52,19 @@ public class DashboardIntegrationTests
         }
         finally
         {
-            await app.StopAsync();
-            await app.DisposeAsync();
+            await StopAsync(app.Application);
         }
     }
 
     [Fact]
     public async Task Tasks_returns_queued_tasks()
     {
-        var bus = new RecordingBus();
-        var app = BuildApp(bus, out _, out var taskBoard, out _);
-        taskBoard.Add(new FleetTask("T1", "A01-L02", DateTime.UtcNow));
-        await app.StartAsync();
+        var app = await StartAppAsync();
         try
         {
-            using var client = app.GetTestClient();
+            app.TaskBoard.Add(new FleetTask("T1", "A01-L02", DateTime.UtcNow));
+
+            using var client = app.Application.GetTestClient();
             var res = await client.GetAsync(DashboardRoutes.Tasks);
             Assert.Equal(HttpStatusCode.OK, res.StatusCode);
             var payload = await res.Content.ReadFromJsonAsync<List<TaskDto>>();
@@ -131,77 +74,165 @@ public class DashboardIntegrationTests
         }
         finally
         {
-            await app.StopAsync();
-            await app.DisposeAsync();
+            await StopAsync(app.Application);
+        }
+    }
+
+    [Fact]
+    public async Task Alarms_returns_saved_alarms_from_the_production_route()
+    {
+        var app = await StartAppAsync();
+        try
+        {
+            var raisedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+            app.Alarms.Alarms.Add(new PostgresAlarmRepository.Alarm(
+                "SH-ALARM-TEST", AlarmSeverities.Critical, AlarmCodes.LostCommunication, raisedAt));
+
+            using var client = app.Application.GetTestClient();
+            var res = await client.GetAsync(DashboardRoutes.Alarms);
+            Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+            var payload = await res.Content.ReadFromJsonAsync<List<AlarmDto>>();
+            Assert.NotNull(payload);
+            Assert.Single(payload!);
+            Assert.Equal("SH-ALARM-TEST", payload[0].shuttleId);
+            Assert.Equal(AlarmCodes.LostCommunication, payload[0].code);
+        }
+        finally
+        {
+            await StopAsync(app.Application);
         }
     }
 
     [Fact]
     public async Task Operator_command_valid_publishes_on_operator_topic()
     {
-        var bus = new RecordingBus();
-        var app = BuildApp(bus, out _, out _, out _);
-        await app.StartAsync();
+        var app = await StartAppAsync();
         try
         {
-            using var client = app.GetTestClient();
+            using var client = app.Application.GetTestClient();
             var res = await client.PostAsJsonAsync(DashboardRoutes.OperatorCommand,
                 new { shuttleId = "SH-01", kind = "Pause", reason = (string?)null });
             Assert.Equal(HttpStatusCode.OK, res.StatusCode);
-            Assert.Single(bus.Published);
-            Assert.Equal("shuttle/operator/command", bus.Published[0].Topic);
-            Assert.Equal(MessageFamily.Json, bus.Published[0].Family);
+            Assert.Single(app.Bus.Published);
+            var published = app.Bus.Published[0];
+            Assert.Equal("shuttle/operator/command", published.Topic);
+            Assert.Equal(MessageFamily.Json, published.Family);
+
+            var command = JsonSerializer.Deserialize<OperatorCommandMessage>(published.Payload);
+            Assert.NotNull(command);
+            Assert.Equal("SH-01", command!.ShuttleId);
+            Assert.Equal(OperatorCommandMessage.Command.Pause, command.Kind);
         }
         finally
         {
-            await app.StopAsync();
-            await app.DisposeAsync();
+            await StopAsync(app.Application);
         }
     }
 
     [Fact]
     public async Task Operator_command_invalid_kind_is_rejected_and_not_published()
     {
-        var bus = new RecordingBus();
-        var app = BuildApp(bus, out _, out _, out _);
-        await app.StartAsync();
+        var app = await StartAppAsync();
         try
         {
-            using var client = app.GetTestClient();
+            using var client = app.Application.GetTestClient();
             var res = await client.PostAsJsonAsync(DashboardRoutes.OperatorCommand,
                 new { shuttleId = "SH-01", kind = "Dance", reason = (string?)null });
             Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
-            Assert.Empty(bus.Published);
+            Assert.Empty(app.Bus.Published);
         }
         finally
         {
-            await app.StopAsync();
-            await app.DisposeAsync();
+            await StopAsync(app.Application);
         }
     }
 
     [Fact]
     public async Task Operator_command_blank_shuttle_id_is_rejected()
     {
-        var bus = new RecordingBus();
-        var app = BuildApp(bus, out _, out _, out _);
-        await app.StartAsync();
+        var app = await StartAppAsync();
         try
         {
-            using var client = app.GetTestClient();
+            using var client = app.Application.GetTestClient();
             var res = await client.PostAsJsonAsync(DashboardRoutes.OperatorCommand,
                 new { shuttleId = "   ", kind = "Pause", reason = (string?)null });
             Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
-            Assert.Empty(bus.Published);
+            Assert.Empty(app.Bus.Published);
         }
         finally
         {
-            await app.StopAsync();
-            await app.DisposeAsync();
+            await StopAsync(app.Application);
+        }
+    }
+
+    private static async Task<DashboardTestApp> StartAppAsync()
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseTestServer();
+        var app = builder.Build();
+
+        var bus = new RecordingBus();
+        var alarms = new RecordingAlarmRepository();
+        var registry = new ShuttleRegistry();
+        var taskBoard = new TaskBoard();
+        var pauseState = new PauseState();
+
+        // The test uses the same route mapping as Program.cs, so a change to
+        // the real routes is exercised here.
+        DashboardEndpoints.MapDashboardRoutes(app, bus, new TopicScheme("shuttle"),
+            registry, taskBoard, pauseState, alarms,
+            new[] { "A01-L01", "A01-L02" }, 1500);
+
+        await app.StartAsync();
+        return new DashboardTestApp(app, bus, alarms, registry, taskBoard, pauseState);
+    }
+
+    private static async Task StopAsync(WebApplication app)
+    {
+        await app.StopAsync();
+        await app.DisposeAsync();
+    }
+
+    private sealed record DashboardTestApp(
+        WebApplication Application,
+        RecordingBus Bus,
+        RecordingAlarmRepository Alarms,
+        ShuttleRegistry Registry,
+        TaskBoard TaskBoard,
+        PauseState PauseState);
+
+    private sealed class RecordingAlarmRepository : IAlarmRepository
+    {
+        public List<PostgresAlarmRepository.Alarm> Alarms { get; } = new();
+
+        public Task SaveAsync(PostgresAlarmRepository.Alarm alarm, CancellationToken cancellationToken)
+        {
+            Alarms.Add(alarm);
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<PostgresAlarmRepository.Alarm>> LoadAllAsync(CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<PostgresAlarmRepository.Alarm>>(Alarms.ToList());
+
+        public Task<PostgresAlarmRepository.Alarm?> GetAsync(string shuttleId, string code, CancellationToken cancellationToken) =>
+            Task.FromResult(Alarms.FirstOrDefault(alarm => alarm.ShuttleId == shuttleId && alarm.Code == code));
+
+        public Task<int> CountUnacknowledgedAsync(string shuttleId, CancellationToken cancellationToken) =>
+            Task.FromResult(Alarms.Count(alarm => alarm.ShuttleId == shuttleId && alarm.AcknowledgedAt is null));
+
+        public Task AcknowledgeAsync(string shuttleId, CancellationToken cancellationToken)
+        {
+            for (var index = 0; index < Alarms.Count; index++)
+            {
+                if (Alarms[index].ShuttleId == shuttleId && Alarms[index].AcknowledgedAt is null)
+                    Alarms[index] = Alarms[index] with { AcknowledgedAt = DateTime.UtcNow };
+            }
+            return Task.CompletedTask;
         }
     }
 
     private sealed record ConfigDto(string[] laneIds, int refreshIntervalMs);
     private sealed record ShuttleDto(string shuttleId, string state, string position, DateTime seenAt, bool pauseRequested);
     private sealed record TaskDto(string taskId, TaskState state, string? assignedShuttleId);
+    private sealed record AlarmDto(string shuttleId, string severity, string code, DateTime raisedAt, DateTime? acknowledgedAt);
 }

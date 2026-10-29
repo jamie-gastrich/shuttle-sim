@@ -31,6 +31,24 @@ internal sealed class RecordingBus : IMessageBus
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
 
+internal sealed class ThrowingAlarmRepository : IAlarmRepository
+{
+    public Task SaveAsync(PostgresAlarmRepository.Alarm alarm, CancellationToken cancellationToken) =>
+        Task.FromException(new InvalidOperationException("database unavailable"));
+
+    public Task<IReadOnlyList<PostgresAlarmRepository.Alarm>> LoadAllAsync(CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
+    public Task<PostgresAlarmRepository.Alarm?> GetAsync(string shuttleId, string code, CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
+    public Task<int> CountUnacknowledgedAsync(string shuttleId, CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
+    public Task AcknowledgeAsync(string shuttleId, CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+}
+
 public sealed class FleetServeLoopTests
 {
     private static readonly DateTime Start = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
@@ -326,6 +344,29 @@ public sealed class FleetServeLoopTests
                 new ShuttleStatus("SH-01", "fault", "A01-L01", Start, FaultReasons.BlockedPath)));
         await bus.Handler!(new MessageReceived(topics.Status("SH-01"), faultJson), CancellationToken.None);
 
+        await loop.EvaluateAndPublishAsync(Start.AddSeconds(31), CancellationToken.None);
+
+        Assert.Equal(2, bus.Published.Count);
+    }
+
+    [Fact]
+    public async Task An_alarm_save_failure_does_not_stop_evaluation_for_other_shuttles()
+    {
+        var bus = new RecordingBus();
+        var topics = new TopicScheme("shuttle");
+        var health = new ShuttleHealth(TimeSpan.FromSeconds(30));
+        var evaluator = new AlarmEvaluator(AlarmSeverities.Critical, AlarmSeverities.Warning);
+
+        var loop = new FleetServeLoop(bus, topics, health, evaluator, "fleet-manager",
+            TimeSpan.FromSeconds(1), () => Start, new ThrowingAlarmRepository());
+
+        await loop.SubscribeAsync(CancellationToken.None);
+        await bus.Handler!(new MessageReceived(topics.Status("SH-01"), StatusJson("SH-01", Start)),
+            CancellationToken.None);
+        await bus.Handler!(new MessageReceived(topics.Status("SH-02"), StatusJson("SH-02", Start)),
+            CancellationToken.None);
+
+        // If the save exception escaped, evaluation would stop after the first shuttle.
         await loop.EvaluateAndPublishAsync(Start.AddSeconds(31), CancellationToken.None);
 
         Assert.Equal(2, bus.Published.Count);

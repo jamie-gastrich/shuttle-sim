@@ -32,6 +32,16 @@ public static class TestDatabase
         return builder.ConnectionString;
     }
 
+    public static async Task ResetAlarmsAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = new Npgsql.NpgsqlConnection(BuildConnectionString());
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new Npgsql.NpgsqlCommand(
+            "DELETE FROM alarms WHERE shuttle_id LIKE 'SH-INT%' OR shuttle_id LIKE 'TEST-ALARM-%'",
+            connection);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     public static async Task ResetAsync(IFleetTaskRepository repository, CancellationToken cancellationToken)
     {
         await repository.GetAsync(SentinelTaskId, cancellationToken);
