@@ -107,11 +107,6 @@ public sealed class Rack
 
     public bool IsRouteBlocked(string fromLane, string toLane)
     {
-        var start = Math.Min(Ordinal(fromLane), Ordinal(toLane));
-        var end = Math.Max(Ordinal(fromLane), Ordinal(toLane));
-        foreach (var blocked in _blockedLanes)
-            if (_laneOrdinals[blocked] >= start && _laneOrdinals[blocked] <= end)
-                return true;
-        return false;
+        return BlockedLanesOnRoute(fromLane, toLane).Any();
     }
 }
