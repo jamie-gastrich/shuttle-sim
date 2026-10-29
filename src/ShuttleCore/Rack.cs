@@ -82,6 +82,24 @@ public sealed class Rack
         _blockedLanes.Add(laneId);
     }
 
+    // Removes a lane from the blocked set. Mirrors MarkBlocked: unknown lanes are rejected.
+    public void UnmarkBlocked(string laneId)
+    {
+        if (!_laneOrdinals.ContainsKey(laneId)) throw new ArgumentException($"unknown lane {laneId}", nameof(laneId));
+        _blockedLanes.Remove(laneId);
+    }
+
+    // Blocked lanes whose ordinals fall between fromLane and toLane (inclusive).
+    // Used by Shuttle to record which lane(s) caused a blocked-route fault.
+    public IEnumerable<string> BlockedLanesOnRoute(string fromLane, string toLane)
+    {
+        var start = Math.Min(Ordinal(fromLane), Ordinal(toLane));
+        var end = Math.Max(Ordinal(fromLane), Ordinal(toLane));
+        foreach (var lane in _blockedLanes)
+            if (Ordinal(lane) >= start && Ordinal(lane) <= end)
+                yield return lane;
+    }
+
     public bool IsBlocked(string laneId)
     {
         return _blockedLanes.Contains(laneId);

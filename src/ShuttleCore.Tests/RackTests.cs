@@ -67,4 +67,20 @@ public class RackTests
         var rack = new Rack(aisleCount: 2, lanesPerAisle: 2, slotsPerLane: 2);
         Assert.Throws<ArgumentException>(() => rack.MarkBlocked("A01-L03"));
     }
+
+    [Fact]
+    public void UnmarkBlocked_removes_a_previously_blocked_lane()
+    {
+        var rack = new Rack(aisleCount: 2, lanesPerAisle: 2, slotsPerLane: 2);
+        rack.MarkBlocked("A01-L02");
+        rack.UnmarkBlocked("A01-L02");
+        Assert.False(rack.IsBlocked("A01-L02"));
+    }
+
+    [Fact]
+    public void UnmarkBlocked_for_an_unknown_lane_is_rejected()
+    {
+        var rack = new Rack(aisleCount: 2, lanesPerAisle: 2, slotsPerLane: 2);
+        Assert.Throws<ArgumentException>(() => rack.UnmarkBlocked("A01-L03"));
+    }
 }

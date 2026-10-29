@@ -8,6 +8,7 @@ public sealed class Shuttle
     private string _position;
     private string? _carriedPalletId;
     private string? _faultReason;
+    private readonly List<string> _blockedLanesOnFault = new();
     private DateTime? _lastEventAt;
     private DateTime _moveStartedAt;
     private string _moveToLane = string.Empty;
@@ -38,6 +39,10 @@ public sealed class Shuttle
         if (!_rack.IsLane(toLane)) throw new ShuttleRejectedException($"unknown lane {toLane}");
         if (_rack.IsRouteBlocked(_position, toLane))
         {
+            // Record which lane(s) on this route are blocked so Recover can unmark
+            // exactly those and leave unrelated blockages in place.
+            _blockedLanesOnFault.Clear();
+            _blockedLanesOnFault.AddRange(_rack.BlockedLanesOnRoute(_position, toLane));
             RaiseFault(FaultReasons.BlockedPath, now);
             return; // State == Fault, position unchanged; the caller inspects State
         }
@@ -146,6 +151,9 @@ public sealed class Shuttle
         EnsureInOrder(now);
         if (_state != ShuttleState.Fault)
             throw new ShuttleRejectedException($"cannot recover while {_state.ToWireName()}");
+        foreach (var lane in _blockedLanesOnFault)
+            _rack.UnmarkBlocked(lane);
+        _blockedLanesOnFault.Clear();
         _state = ShuttleState.Idle;
         _faultReason = null;
         _lastEventAt = now;

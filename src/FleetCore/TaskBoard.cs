@@ -1,4 +1,7 @@
 namespace FleetCore;
+
+// Settled meaning (decision 43): PauseAllExcept(shuttleId) pauses dispatch for
+// the named shuttle. A blank id pauses every queued task. The name is historical.
 public sealed class TaskBoard
 {
     private readonly List<FleetTask> _tasks = new();
@@ -41,11 +44,8 @@ public sealed class TaskBoard
 
         foreach (var task in _tasks)
         {
-            // A queued task has no owner yet. Pausing one shuttle must not hide
-            // work that another shuttle can still take, so only work already
-            // assigned to a different shuttle is paused here. Work owned by the
-            // named shuttle is left running.
-            if (task.AssignedShuttleId is { } owner && owner != shuttleId)
+            // Pause dispatch for the named shuttle only.
+            if (task.AssignedShuttleId == shuttleId)
                 _pausedTaskIds.Add(task.TaskId);
         }
         return Task.CompletedTask;
@@ -61,10 +61,9 @@ public sealed class TaskBoard
 
         foreach (var task in _tasks)
         {
-            // Clear the paused mark for everything except work still owned by the
-            // named shuttle. Including unowned tasks here also clears the mark
-            // when paused work was requeued and no longer has an owner.
-            if (task.AssignedShuttleId != shuttleId)
+            // Clear the paused mark for the named shuttle's tasks and for
+            // unassigned tasks that were paused globally.
+            if (task.AssignedShuttleId == shuttleId || task.AssignedShuttleId is null)
                 _pausedTaskIds.Remove(task.TaskId);
         }
         return Task.CompletedTask;

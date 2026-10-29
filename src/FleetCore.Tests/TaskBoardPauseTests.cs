@@ -19,7 +19,7 @@ public class TaskBoardPauseTests
     }
 
     [Fact]
-    public async Task Pausing_one_shuttle_excludes_work_owned_by_that_shuttle()
+    public async Task Pausing_one_shuttle_pauses_only_its_own_assigned_work()
     {
         var board = new TaskBoard();
         var ownTask = new FleetTask("task-own", "A01-L02", Start);
@@ -35,25 +35,25 @@ public class TaskBoardPauseTests
         ownTask.Requeue(Start.AddSeconds(1));
         otherTask.Requeue(Start.AddSeconds(2));
 
-        Assert.Contains(board.Queued(), task => task.TaskId == "task-own");
-        Assert.DoesNotContain(board.Queued(), task => task.TaskId == "task-other");
+        Assert.DoesNotContain(board.Queued(), task => task.TaskId == "task-own");
+        Assert.Contains(board.Queued(), task => task.TaskId == "task-other");
     }
 
     [Fact]
     public async Task Resuming_one_shuttle_restores_its_paused_work()
     {
         var board = new TaskBoard();
-        var otherTask = new FleetTask("task-other", "A01-L03", Start);
-        otherTask.Assign("SH-02", Start);
-        board.Add(otherTask);
+        var ownTask = new FleetTask("task-own", "A01-L02", Start);
+        ownTask.Assign("SH-01", Start);
+        board.Add(ownTask);
 
         await board.PauseAllExcept("SH-01", CancellationToken.None);
-        otherTask.Requeue(Start.AddSeconds(1));
-        Assert.DoesNotContain(board.Queued(), task => task.TaskId == "task-other");
+        ownTask.Requeue(Start.AddSeconds(1));
+        Assert.DoesNotContain(board.Queued(), task => task.TaskId == "task-own");
 
         await board.ResumeAllExcept("SH-01", CancellationToken.None);
 
-        Assert.Contains(board.Queued(), task => task.TaskId == "task-other");
+        Assert.Contains(board.Queued(), task => task.TaskId == "task-own");
     }
 
     [Fact]
