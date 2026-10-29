@@ -35,7 +35,7 @@ docker/                 broker, database, and environment
 
 ## What ships in src/
 
-Eight small projects: six libraries (pure decision logic, no I/O, so each can be tested alone) and two `.Exe` apps that wire the libraries to a real broker and database.
+Eight small projects: six libraries (pure decision logic, no I/O, so each can be tested alone) and two `.Exe` apps that wire the libraries to a real broker and database. Also includes a Vue/Vite browser dashboard (`src/Dashboard/`) built into the FleetManager's static files and a mock WMS service.
 
 The two apps never call each other directly. They both connect to the MQTT broker and exchange messages on topics, so either side can be restarted without the other noticing:
 
@@ -100,8 +100,9 @@ The table gives the same picture project by project, plus what each one is:
 | `FleetCore` | — | nothing | Tasks, `TaskBoard`, repository interface (pure) |
 | `Messaging` | `Contracts` | — | `IMessageBus`, `TopicScheme`, envelopes, retry, idempotency (seam only) |
 | `MqttMessaging` | `Contracts`, `Messaging` | broker (MQTTnet) | Concrete MQTT bus: connect, pub/sub, QoS from config |
-| `FleetManager` **(app)** | `FleetCore`, `Contracts`, `Messaging`, `MqttMessaging`, `TrafficCore` | broker + Postgres | Manager console. Today: `move` (send + retry a command) and `serve` (liveness + alarms). Assignment and traffic wiring arrive in later slices. |
+| `FleetManager` **(app)** | `FleetCore`, `Contracts`, `Messaging`, `MqttMessaging`, `TrafficCore` | broker + Postgres | Manager console. Modes: `move` (send + retry a command), `recover` (recovery command), `serve` (liveness, alarms, task execution, WMS integration, REST API, operator dashboard/static files). Requires Postgres (`FleetManager:PostgresConnectionString` or `SHUTTLE_DB_CONNECTION_STRING`). |
 | `ShuttleSim` **(app)** | `ShuttleCore`, `Contracts`, `Messaging`, `MqttMessaging` | broker | One simulated shuttle per process: accepts commands, moves, emits status + heartbeat |
+| `MockWms` **(app/service)** | `Contracts` | HTTP | Mock WMS REST service for order submission/status. |
 | `* .Tests` | their project + a few deps | test frameworks | Direct test project for each project |
 
 `FleetManager` and `ShuttleSim` are the only programs that touch I/O. Everything under them (state machines, traffic, tasks, messaging contracts) is pure C# with no broker or database, so it unit-tests in milliseconds with no services running.
@@ -112,25 +113,60 @@ Each `src/*/README.md` has a short **Overview** section: what the project is, wh
 
 ## Build and test
 
-Start the supporting services (broker + database) needed for integration tests:
+### Frontend (dashboard)
+The browser dashboard is built from `src/Dashboard/` and copied to `src/FleetManager/wwwroot/` during build. You can build it separately:
 
+```bash
+cd src/Dashboard
+npm ci
+npm run build
+cd ../..
 ```
+
+### Backend
+Start the supporting services (broker + database) needed for integration tests and for `serve`:
+
+```bash
 docker compose -f docker/compose.yml up -d
 ```
-```
+
+```bash
 cd src
 dotnet build
 dotnet test
 cd ..
 ```
+
+Or run all except integration tests:
+
+```bash
+cd src
+dotnet build
+dotnet test --filter "Category!=Integration"
+cd ..
 ```
+
+### Full container build
+The Docker build compiles the frontend and backend together:
+
+```bash
 docker build -f docker/Dockerfile.build -t shuttle-fleet-build .
 docker run --rm shuttle-fleet-build
 ```
 
+### Running the fleet manager (serve)
+`serve` requires Postgres. Set the connection string via environment variable or `appsettings.json`:
+
+```bash
+export SHUTTLE_DB_CONNECTION_STRING="Host=127.0.0.1;Port=5432;Database=shuttle;Username=shuttle;Password=shuttle"
+dotnet run --project src/FleetManager -- serve
+```
+
+Dashboard lane layout comes from `Dashboard:LaneIds` in `appsettings.json` (static config for now). The dashboard is served at the configured Kestrel URL (e.g., `http://127.0.0.1:5080/`).
+
 Stop the services when done:
 
-```
+```bash
 docker compose -f docker/compose.yml down
 ```
 
@@ -143,6 +179,8 @@ cd ..
 ```
 ### Verification notes
 Commands the reviewer ran to confirm each `done` milestone go here.
+
+**M7** (in progress) — slices reviewed: lesson 33 (browser dashboard) `docs/reviews/33-browser-dashboard.md` (to be recorded). Verified in build report `docs/builds/33-browser-dashboard-report.md`: frontend `npm ci && npm run build` succeeded (assets to `src/FleetManager/wwwroot/`), `dotnet build ShuttleFleet.slnx` succeeded, `dotnet test ShuttleFleet.slnx -v m --filter "Category!=Integration"` passed 86 tests in FleetManager.Tests, Docker build/run passed, integration tests passed with broker/database up, live `dotnet run --project src/FleetManager -- serve` returned `GET /` with built page. Postgres required for `serve` (connection string via `FleetManager:PostgresConnectionString` or `SHUTTLE_DB_CONNECTION_STRING`). Dashboard lane layout is static from `Dashboard:LaneIds` in config (dynamic discovery not yet implemented).
 
 **M6** (done) — slices reviewed: lesson 20 (WMS REST front door) `docs/reviews/20-wms-rest-front-door.md`; lesson 21 (WMS order to task mapping) `docs/reviews/21-wms-order-to-task-mapping.md`; lesson 22 (order state ladder) `docs/reviews/22-order-state-ladder.md`; lesson 23 (status push) `docs/reviews/23-status-push.md`; lesson 24 (execution slice) `docs/reviews/24-execution-slice.md`; lesson 25 (persistence) `docs/reviews/25-persistence-slice.md`; lesson 26 (dashboard diagnostics) `docs/reviews/26-dashboard-diagnostics.md`; lesson 27 (order cancel slice) `docs/reviews/27-order-cancel-slice.md`; lesson 28 (mock WMS reliability) `docs/reviews/28-mock-wms-reliability.md`. M6 done-when met: orders flow WMS->pallets->back and cancel works; WMS outage/bad order does not corrupt fleet state. From `src/`: `cd src && dotnet build --no-incremental` → exit 0, 0 warnings, 0 errors; `cd src && dotnet test ShuttleFleet.slnx -v m --filter "Category!=Integration"` → RC 0, 9 `Passed!`, 0 failed, 219 tests (FleetCore 67, FleetManager 75, ShuttleCore 31, TrafficCore 6, Contracts 8, Messaging 10, MqttMessaging 3, MockWms 9, ShuttleSim 10); with broker+database up `cd src && dotnet test ShuttleFleet.slnx -v m --filter "Category=Integration"` → RC 0, 4 passed, 0 failed. Docker brought down after the run; no broker/container left running.
 

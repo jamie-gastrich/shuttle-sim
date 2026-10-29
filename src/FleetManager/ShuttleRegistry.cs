@@ -58,6 +58,18 @@ public sealed class ShuttleRegistry
         }
     }
 
+    public IReadOnlyList<ShuttleSnapshot> Snapshot()
+    {
+        lock (_gate)
+        {
+            // Copy under the lock so a status update cannot change the list
+            // while the dashboard (or a test) enumerates it.
+            return _shuttles.Values
+                .OrderBy(shuttle => shuttle.ShuttleId, StringComparer.Ordinal)
+                .ToList();
+        }
+    }
+
     public IReadOnlyList<string> ShuttleIds()
     {
         lock (_gate)

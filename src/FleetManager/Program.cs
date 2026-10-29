@@ -150,6 +150,12 @@ async Task<int> RunServeAsync()
 		?? throw new InvalidOperationException("FleetManager:LostCommunicationSeverity is missing.");
 	var blockedPathSeverity = configuration.GetValue<string>("FleetManager:BlockedPathSeverity")
 	?? throw new InvalidOperationException("FleetManager:BlockedPathSeverity is missing.");
+	var dashboardLaneIds = configuration.GetSection("Dashboard:LaneIds").Get<string[]>() ?? Array.Empty<string>();
+	if (dashboardLaneIds.Length == 0)
+		throw new InvalidOperationException("Dashboard:LaneIds must be a non-empty list.");
+	var dashboardRefreshMs = configuration.GetValue<int>("Dashboard:RefreshIntervalMs");
+	if (dashboardRefreshMs < 1)
+		throw new InvalidOperationException("Dashboard:RefreshIntervalMs must be positive.");
 	var listenUrl = configuration.GetValue<string>("Kestrel:Endpoints:Http:Url");
 	if (string.IsNullOrWhiteSpace(listenUrl))
 		throw new InvalidOperationException("Kestrel:Endpoints:Http:Url must be set.");
@@ -197,8 +203,9 @@ async Task<int> RunServeAsync()
 	var evaluator = new AlarmEvaluator(severity, blockedPathSeverity);
 	await using var bus = new MqttMessageBus(mqtt);
 	await bus.ConnectAsync(CancellationToken.None);
+	var alarmRepository = new PostgresAlarmRepository(connectionString!);
 	var loop = new FleetServeLoop(bus, topics, health, evaluator, messaging.FleetManagerId,
-		TimeSpan.FromMilliseconds(intervalMs), () => DateTime.UtcNow);
+		TimeSpan.FromMilliseconds(intervalMs), () => DateTime.UtcNow, alarmRepository);
 	var taskBoard = new FleetCore.TaskBoard();
 	var pauseState = new PauseState();
 	var board = new WmsOrderBoard(taskBoard);
@@ -206,7 +213,6 @@ async Task<int> RunServeAsync()
 	var orderSync = new OrderSync(board, outbox);
 	var taskRepository = new PostgresFleetTaskRepository(connectionString!);
 	var orderRepository = new PostgresWmsOrderRepository(connectionString!);
-	var alarmRepository = new PostgresAlarmRepository(connectionString!);
 
 	// Restore before the bus connects, so the first tick sees a full fleet manager.
 	// Retry a few times in case PostgreSQL is still starting.
@@ -281,6 +287,8 @@ async Task<int> RunServeAsync()
 		ContentRootPath = AppContext.BaseDirectory,   // same folder the config reader uses
 	});
 	var webApp = webBuilder.Build();
+	webApp.UseDefaultFiles();
+	webApp.UseStaticFiles();
 	webApp.MapPost(WmsRoutes.Orders, (SubmitOrderRequest request) =>
 	{
 		var errors = WmsOrderValidator.Validate(request);
@@ -313,6 +321,46 @@ async Task<int> RunServeAsync()
 			.Select(t => new { t.TaskId, t.State, t.AssignedShuttleId })
 			.ToList());
 	webApp.MapGet(WmsRoutes.DeliveryFailures, () => wmsDeliveryFailures.Snapshot());
+	webApp.MapGet(DashboardRoutes.Config, () =>
+		Results.Ok(new { laneIds = dashboardLaneIds, refreshIntervalMs = dashboardRefreshMs }));
+	webApp.MapGet(DashboardRoutes.Shuttles, () =>
+		registry.Snapshot().Select(shuttle => new
+		{
+			shuttle.ShuttleId,
+			shuttle.State,
+			shuttle.Position,
+			shuttle.SeenAt,
+			pauseRequested = pauseState.IsPaused(shuttle.ShuttleId),
+		}).ToList());
+	webApp.MapGet(DashboardRoutes.Tasks, () =>
+		taskBoard.Queued().Select(task => new { task.TaskId, task.State, task.AssignedShuttleId }).ToList());
+	webApp.MapGet(DashboardRoutes.Alarms, async () =>
+		await alarmRepository.LoadAllAsync(CancellationToken.None));
+	webApp.MapPost(DashboardRoutes.OperatorCommand, async (DashboardOperatorCommandRequest request) =>
+	{
+		if (request is null || string.IsNullOrWhiteSpace(request.ShuttleId) || string.IsNullOrWhiteSpace(request.Kind))
+			return Results.BadRequest("shuttleId and kind are required.");
+
+		OperatorCommandMessage.Command kind = request.Kind switch
+		{
+			"Pause" => OperatorCommandMessage.Command.Pause,
+			"Resume" => OperatorCommandMessage.Command.Resume,
+			"Acknowledge" => OperatorCommandMessage.Command.Acknowledge,
+			_ => (OperatorCommandMessage.Command)(-1),
+		};
+		if ((int)kind < 0)
+			return Results.BadRequest("kind must be Pause, Resume, or Acknowledge.");
+
+		var command = new OperatorCommandMessage
+		{
+			ShuttleId = request.ShuttleId,
+			Kind = kind,
+			Reason = request.Reason,
+		};
+		await bus.PublishAsync(topics.OperatorCommand, JsonSerializer.Serialize(command),
+			MessageFamily.Json, CancellationToken.None);
+		return Results.Ok();
+	});
 	async Task HandleOperatorCommandAsync(MessageReceived message, CancellationToken cancellationToken)
 	{
 		var cmd = JsonSerializer.Deserialize<OperatorCommandMessage>(message.Payload);

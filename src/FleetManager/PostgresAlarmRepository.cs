@@ -4,6 +4,17 @@ namespace FleetManager;
 
 public sealed class PostgresAlarmRepository
 {
+    private const string CreateTableSql = """
+        CREATE TABLE IF NOT EXISTS alarms (
+            shuttle_id text NOT NULL,
+            code text NOT NULL,
+            severity text NOT NULL,
+            raised_at timestamptz NOT NULL,
+            acknowledged_at timestamptz NULL,
+            PRIMARY KEY (shuttle_id, code)
+        )
+        """;
+
     private readonly string _connectionString;
 
     public PostgresAlarmRepository(string connectionString)
@@ -15,10 +26,17 @@ public sealed class PostgresAlarmRepository
         string ShuttleId, string Severity, string Code, DateTime RaisedAt,
         DateTime? AcknowledgedAt = null);
 
+    private static async Task EnsureTableAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(CreateTableSql, connection);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     public async Task SaveAsync(Alarm alarm, CancellationToken cancellationToken)
     {
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
+        await EnsureTableAsync(connection, cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = @"
             INSERT INTO alarms (shuttle_id, code, severity, raised_at, acknowledged_at)
@@ -37,6 +55,7 @@ public sealed class PostgresAlarmRepository
     {
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
+        await EnsureTableAsync(connection, cancellationToken);
         var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT shuttle_id, code, severity, raised_at, acknowledged_at FROM alarms";
         var reader = await cmd.ExecuteReaderAsync(cancellationToken);
@@ -59,6 +78,7 @@ public sealed class PostgresAlarmRepository
     {
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
+        await EnsureTableAsync(connection, cancellationToken);
         var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT shuttle_id, code, severity, raised_at, acknowledged_at FROM alarms WHERE shuttle_id = @shuttleId AND code = @code";
         cmd.Parameters.AddWithValue("@shuttleId", shuttleId);
@@ -79,6 +99,7 @@ public sealed class PostgresAlarmRepository
     {
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
+        await EnsureTableAsync(connection, cancellationToken);
         var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT COUNT(*) FROM alarms WHERE shuttle_id = @shuttleId AND acknowledged_at IS NULL";
         cmd.Parameters.AddWithValue("@shuttleId", shuttleId);
@@ -89,6 +110,7 @@ public sealed class PostgresAlarmRepository
     {
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
+        await EnsureTableAsync(connection, cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = "UPDATE alarms SET acknowledged_at = NOW() WHERE shuttle_id = @shuttleId AND acknowledged_at IS NULL";
         command.Parameters.AddWithValue("@shuttleId", shuttleId);

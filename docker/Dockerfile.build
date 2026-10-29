@@ -1,6 +1,14 @@
+FROM node:22 AS frontend
+WORKDIR /shuttle
+COPY src/Dashboard/ ./src/Dashboard/
+WORKDIR /shuttle/src/Dashboard
+RUN npm ci
+RUN npm run build
+
 FROM mcr.microsoft.com/dotnet/sdk:10.0
 WORKDIR /shuttle
 COPY global.json ./
 COPY src/ ./src/
+COPY --from=frontend /shuttle/src/FleetManager/wwwroot ./src/FleetManager/wwwroot
 RUN dotnet build src/ShuttleFleet.slnx -v m
 CMD ["dotnet", "test", "src/ShuttleFleet.slnx", "-v", "m", "--filter", "Category!=Integration"]

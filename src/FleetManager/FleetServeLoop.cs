@@ -17,9 +17,11 @@ public sealed class FleetServeLoop
     private readonly object _knownLock = new();
     private readonly HashSet<string> _knownShuttles = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _faultCodes = new(StringComparer.Ordinal);
+    private readonly PostgresAlarmRepository? _alarmRepository;
 
     public FleetServeLoop(IMessageBus bus, TopicScheme topics, ShuttleHealth health,
-    AlarmEvaluator evaluator, string fleetManagerId, TimeSpan evaluationInterval, Func<DateTime> clock)
+    AlarmEvaluator evaluator, string fleetManagerId, TimeSpan evaluationInterval, Func<DateTime> clock,
+    PostgresAlarmRepository? alarmRepository = null)
     {
         _bus = bus ?? throw new ArgumentNullException(nameof(bus));
         _topics = topics ?? throw new ArgumentNullException(nameof(topics));
@@ -32,6 +34,7 @@ public sealed class FleetServeLoop
         _fleetManagerId = fleetManagerId;
         _evaluationInterval = evaluationInterval > TimeSpan.Zero ? evaluationInterval : throw new ArgumentOutOfRangeException(nameof(evaluationInterval));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
+        _alarmRepository = alarmRepository;
     }
     public Task SubscribeAsync(CancellationToken cancellationToken) =>
     _bus.SubscribeAsync(_topics.AllStatuses, MessageFamily.Status, HandleStatusAsync, cancellationToken);
@@ -95,7 +98,15 @@ public sealed class FleetServeLoop
             var lost = _health.IsUnresponsive(id, now);
             var faultCode = faults.TryGetValue(id, out var c) ? c : null;
             foreach (var alarm in _evaluator.Evaluate(id, lost, faultCode))
+            {
                 await PublishAlarmAsync(alarm, now, cancellationToken);
+                if (_alarmRepository is not null)
+                {
+                    await _alarmRepository.SaveAsync(
+                        new PostgresAlarmRepository.Alarm(alarm.ShuttleId, alarm.Severity, alarm.Code, now, null),
+                        cancellationToken);
+                }
+            }
         }
     }
 

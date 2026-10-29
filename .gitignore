@@ -14,3 +14,6 @@ TestResults/
 
 # Logs
 *.log
+# Dashboard dependencies and generated assets
+src/Dashboard/node_modules/
+src/FleetManager/wwwroot/
