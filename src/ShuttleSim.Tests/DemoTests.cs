@@ -34,6 +34,6 @@ public class DemoTests
         Assert.All(statuses, s => Assert.Equal("SH-01", s!.ShuttleId));
         Assert.Equal("A01-L01", statuses[3]!.Position);
         Assert.Equal("A02-L02", statuses[^1]!.Position);
-        Assert.Equal(new DateTime(2026, 1, 1, 0, 0, 19, DateTimeKind.Utc), statuses[^1]!.Timestamp);
+        Assert.Equal(new DateTime(2026, 1, 1, 0, 0, 14, DateTimeKind.Utc), statuses[^1]!.Timestamp);
     }
 }

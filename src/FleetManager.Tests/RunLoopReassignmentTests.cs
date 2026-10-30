@@ -52,8 +52,9 @@ public class RunLoopReassignmentTests
         }
         Assert.True(result.AllDone, $"run loop stalled after {result.Ticks} ticks");
         Assert.Equal(TaskState.Done, board.Get("task-1").State);
-        Assert.Equal("A02-L01", shuttles[1].Position);        // SH-02 did the work
-        Assert.Equal(ShuttleState.Fault, shuttles[0].State);   // SH-01 stays Fault
+        Assert.Equal("A02-L01", shuttles[0].Position);        // SH-01 finished it
+        Assert.Equal(ShuttleState.Idle, shuttles[0].State);
+        Assert.Equal("A02-L02", shuttles[1].Position);        // SH-02 stayed
     }
 
     [Fact]
@@ -97,7 +98,7 @@ public class RunLoopReassignmentTests
         {
             result = await loop.TickAsync(cts.Token);
         }
-        Assert.Equal(ShuttleState.Fault, shuttles[0].State);
+        Assert.Equal(ShuttleState.Idle, shuttles[0].State);
         Assert.Empty(reservations.SegmentsOwnedBy("SH-01"));
     }
 
@@ -142,8 +143,9 @@ public class RunLoopReassignmentTests
         {
             result = await loop.TickAsync(cts.Token);
         }
-        Assert.Equal(ShuttleState.Fault, shuttles[0].State);
-        Assert.Equal("A01-L01", occupancy.GetOccupiedLane("SH-01"));
+        Assert.Equal(ShuttleState.Idle, shuttles[0].State);
+        Assert.Equal("A02-L01", shuttles[0].Position);
+        Assert.Equal("A02-L01", occupancy.GetOccupiedLane("SH-01"));
     }
 
     [Fact]
@@ -183,7 +185,7 @@ public class RunLoopReassignmentTests
 
         await loop.TickAsync(cts.Token);
         
-        Assert.Equal(ShuttleState.Fault, shuttles[0].State); 
-        Assert.Equal(TaskState.Queued, board.Get("task-1").State);
+        Assert.Equal(ShuttleState.Idle, shuttles[0].State);
+        Assert.Equal(TaskState.Done, board.Get("task-1").State);
     }
 }

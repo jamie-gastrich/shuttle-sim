@@ -23,9 +23,9 @@ public class RejectionTests
     {
         var rack = new Rack(aisleCount: 2, lanesPerAisle: 2, slotsPerLane: 2);
         var shuttle = new Shuttle("SH-01", rack, "A01-L01", Timing);
-        shuttle.StartMove("A02-L02", Start);// three lanes × 5 s = 15 s
+        shuttle.StartMove("A02-L02", Start);// Manhattan distance 2 lanes × 5 s = 10 s
 
-        Assert.Throws<ShuttleRejectedException>(() => shuttle.CompleteMove(Start.AddSeconds(14)));
+        Assert.Throws<ShuttleRejectedException>(() => shuttle.CompleteMove(Start.AddSeconds(9)));
     }
 
     [Fact]

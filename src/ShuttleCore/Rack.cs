@@ -49,7 +49,8 @@ public sealed class Rack
         _slotLanes.TryGetValue(slotId, out var home) && home == laneId;
 
     public int DistanceInLanes(string fromLane, string toLane) =>
-        Math.Abs(Ordinal(fromLane) - Ordinal(toLane));
+        Math.Abs(AisleOf(fromLane) - AisleOf(toLane))
+        + Math.Abs(LaneOf(fromLane) - LaneOf(toLane));
 
     public bool IsOccupied(string slotId) => PalletAt(slotId) is not null;
 
@@ -70,6 +71,21 @@ public sealed class Rack
         var pallet = _palletsBySlot[slotId] ?? throw new InvalidOperationException($"{slotId} is empty");
         _palletsBySlot[slotId] = null;
         return pallet;
+    }
+
+    private int AisleOf(string laneId)
+    {
+        if (!IsLane(laneId)) throw new ArgumentException($"unknown lane {laneId}", nameof(laneId));
+        // Format: A{aisle:00}-L{lane:00}
+        var parts = laneId.Split('-');
+        return int.Parse(parts[0].Substring(1));
+    }
+
+    private int LaneOf(string laneId)
+    {
+        if (!IsLane(laneId)) throw new ArgumentException($"unknown lane {laneId}", nameof(laneId));
+        var lanePart = laneId.Split('-')[1];
+        return int.Parse(lanePart.Substring(1));
     }
 
     private int Ordinal(string laneId) => _laneOrdinals.TryGetValue(laneId, out var ordinal)
@@ -93,11 +109,17 @@ public sealed class Rack
     // Used by Shuttle to record which lane(s) caused a blocked-route fault.
     public IEnumerable<string> BlockedLanesOnRoute(string fromLane, string toLane)
     {
-        var start = Math.Min(Ordinal(fromLane), Ordinal(toLane));
-        var end = Math.Max(Ordinal(fromLane), Ordinal(toLane));
+        var aMin = Math.Min(AisleOf(fromLane), AisleOf(toLane));
+        var aMax = Math.Max(AisleOf(fromLane), AisleOf(toLane));
+        var lMin = Math.Min(LaneOf(fromLane), LaneOf(toLane));
+        var lMax = Math.Max(LaneOf(fromLane), LaneOf(toLane));
         foreach (var lane in _blockedLanes)
-            if (Ordinal(lane) >= start && Ordinal(lane) <= end)
+        {
+            var a = AisleOf(lane);
+            var l = LaneOf(lane);
+            if (a >= aMin && a <= aMax && l >= lMin && l <= lMax)
                 yield return lane;
+        }
     }
 
     public bool IsBlocked(string laneId)

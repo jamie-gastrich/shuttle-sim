@@ -31,7 +31,7 @@ public class RackTests
         var rack = new Rack(aisleCount: 2, lanesPerAisle: 2, slotsPerLane: 2);
 
         Assert.Equal(1, rack.DistanceInLanes("A01-L01", "A01-L02"));
-        Assert.Equal(3, rack.DistanceInLanes("A01-L01", "A02-L02"));
+        Assert.Equal(2, rack.DistanceInLanes("A01-L01", "A02-L02"));
     }
     
     [Fact]
