@@ -17,7 +17,7 @@ Only the reviewer changes this table, and only after a passing review.
 | M4 | Traffic control | done |
 | M5 | Faults and recovery | done |
 | M6 | WMS integration | done |
-| M7 | Operator dashboard and diagnostics | in progress |
+| M7 | Operator dashboard and diagnostics | done |
 | M8 | Stretch | not started |
 
 ## Layout
